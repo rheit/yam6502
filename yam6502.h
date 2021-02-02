@@ -958,7 +958,7 @@ namespace m65xx {
 		}
 		ExecPtrRet execRTI_T0()			// Pull PCH from stack
 		{
-			PC = TempAddr | (Bus->readAddr(STACK_PAGE | SP++) << 8);
+			PC = TempAddr | (Bus->readAddr(STACK_PAGE | SP) << 8);
 			return &type::execCommon_Sto_T1;
 		}
 
