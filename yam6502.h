@@ -54,6 +54,7 @@ namespace m65xx {
 		[[nodiscard]] constexpr uint16_t getPC() const { return PC; }
 		[[nodiscard]] constexpr uint8_t getP() const { return static_cast<uint8_t>(P); }
 		[[nodiscard]] constexpr uint8_t getIR() const { return IR; }
+		[[nodiscard]] constexpr bool getSync() const { return Sync; }
 
 		// Setters
 		void setA(uint8_t val) { A = val; }
@@ -64,11 +65,20 @@ namespace m65xx {
 		void setP(uint8_t val) { P = val; }
 
 		// Do something
-		void reset() { IR = op::BRK; AddrMode = am::brk; BaseOp = op::RESET; State = &M6502<T>::execBRK_T2; }
-		void tick(int cycles = 1) {
+		void reset()
+		{
+			IR = op::BRK;
+			AddrMode = am::brk;
+			BaseOp = op::RESET;
+			State = &M6502<T>::execBRK_T2;
+		}
+
+		void tick(int cycles = 1)
+		{
 			ExecPtr next = State;
 			while (cycles-- > 0) {
 				assert(next != nullptr);
+				Sync = false;
 				next = std::invoke(next, this);
 			}
 			State = next;
@@ -144,6 +154,7 @@ namespace m65xx {
 		uint16_t TempAddr = 0;
 		uint8_t TempData = 0;
 		uint8_t IR = 0;
+		bool Sync = false;
 		StatusFlags P;
 
 		// Helper functions to access optional pins on the bus
@@ -200,8 +211,9 @@ namespace m65xx {
 		am AddrMode = am::brk;
 		op BaseOp = op::RESET;
 
-		ExecPtrRet nextInstr()
+		[[nodiscard]] ExecPtrRet nextInstr()
 		{
+			Sync = true;
 			IR = Bus->readAddr(PC++);
 			const BaseOpcode &base = Opc6502[IR];
 			AddrMode = base.Mode;
@@ -210,7 +222,7 @@ namespace m65xx {
 		}
 
 		/**************** Opcode state definitions past this point ****************/
-		// Note: State numbers (Tn) match those from Visual6502, not those from the
+		// Note: State numbers (Tn) match those from Visual 6502, not those from the
 		// hardware manual.
 
 
