@@ -60,7 +60,7 @@ namespace m65xx {
 		void setX(uint8_t val) { X = val; }
 		void setY(uint8_t val) { Y = val; }
 		void setSP(uint16_t val) { SP = val & 0xFF; }
-		void setPC(uint16_t val) { PC = val; }
+		void setPC(uint16_t val) { PC = val; State = &type::execCommon_Sto_T1; }
 		void setP(uint8_t val) { P = val; }
 
 		// Do something
