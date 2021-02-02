@@ -247,7 +247,7 @@ namespace m65xx {
 		{ op::SLO, am::zp_rmw },	// 07
 		{ op::PHP, am::push },		// 08
 		{ op::ORA, am::imm },		// 09
-		{ op::ASL, am::imp },		// 0A
+		{ op::ASL, am::acc },		// 0A
 		{ op::ANC, am::imm },		// 0B
 		{ op::NOP, am::abs },		// 0C
 		{ op::ORA, am::abs },		// 0D
@@ -281,7 +281,7 @@ namespace m65xx {
 		{ op::RLA, am::zp_rmw },	// 27
 		{ op::PLP, am::pull },		// 28
 		{ op::AND, am::imm },		// 29
-		{ op::ROL, am::imp },		// 2A
+		{ op::ROL, am::acc },		// 2A
 		{ op::ANC, am::imm },		// 2B
 		{ op::BIT, am::abs },		// 2C
 		{ op::AND, am::abs },		// 2D
@@ -315,7 +315,7 @@ namespace m65xx {
 		{ op::SRE, am::zp_rmw },	// 47
 		{ op::PHA, am::push },		// 48
 		{ op::EOR, am::imm },		// 49
-		{ op::LSR, am::imp },		// 4A
+		{ op::LSR, am::acc },		// 4A
 		{ op::ALR, am::imm },		// 4B
 		{ op::JMP, am::jmp },		// 4C
 		{ op::EOR, am::abs },		// 4D
@@ -349,7 +349,7 @@ namespace m65xx {
 		{ op::RRA, am::zp_rmw },	// 67
 		{ op::PLA, am::pull },		// 68
 		{ op::ADC, am::imm },		// 69
-		{ op::ROR, am::imp },		// 6A
+		{ op::ROR, am::acc },		// 6A
 		{ op::ARR, am::imm },		// 6B
 		{ op::JMP, am::jmp_ind },	// 6C
 		{ op::ADC, am::abs },		// 6D
