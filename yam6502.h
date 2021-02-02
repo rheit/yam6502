@@ -803,14 +803,14 @@ namespace m65xx {
 		}
 		ExecPtrRet execJumpInd_T4()		// Fetch low byte of target address
 		{
-			PC = Bus->readAddr(TempAddr);
+			TempData = Bus->readAddr(TempAddr);
 			return &type::execJumpInd_T0;
 		}
 		ExecPtrRet execJumpInd_T0()		// Fetch high byte of target address
 		{
 			// On the NMOS 6502, a page boundary is not crossed here
-			uint16_t addr = (TempAddr & 0x00FF) | ((TempAddr + 1) & 0x00FF);
-			PC |= Bus->readAddr(addr) << 8;
+			uint16_t addr = (TempAddr & 0xFF00) | ((TempAddr + 1) & 0x00FF);
+			PC = TempData | (Bus->readAddr(addr) << 8);
 			return &type::execJumpInd_T1;
 		}
 		ExecPtrRet execJumpInd_T1()		// Fetch next instruction
