@@ -855,17 +855,17 @@ namespace m65xx {
 		}
 		ExecPtrRet execRTS_T3()			// Dummy read from stack
 		{
-			Bus->readAddr(STACK_PAGE | SP++);
+			Bus->readAddr(STACK_PAGE | SP);
 			return &type::execRTS_T4;
 		}
 		ExecPtrRet execRTS_T4()			// Pull PCL from stack
 		{
-			TempAddr = Bus->readAddr(STACK_PAGE | SP++);
+			TempAddr = Bus->readAddr(STACK_PAGE | ++SP);
 			return &type::execRTS_T5;
 		}
 		ExecPtrRet execRTS_T5()			// Pull PCH from stack
 		{
-			TempAddr |= Bus->readAddr(STACK_PAGE | SP++) << 8;
+			TempAddr |= Bus->readAddr(STACK_PAGE | ++SP) << 8;
 			return &type::execRTS_T0;
 		}
 		ExecPtrRet execRTS_T0()			// Dummy read to increment PC
