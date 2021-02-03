@@ -1163,7 +1163,7 @@ namespace m65xx {
 
 		uint8_t execBIT(uint8_t data)
 		{
-			P.setZ(A & data);
+			P.setZ(!(A & data));
 			P.setN(data);
 			P.setV(data);
 			return 0;
@@ -1288,7 +1288,7 @@ namespace m65xx {
 		{
 			P.setC(bool(data & 1));
 			data >>= 1;
-			P.setZ(data);
+			P.setZ(!data);
 			P.setN(false);
 			return data;
 		}
