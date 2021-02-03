@@ -355,7 +355,7 @@ namespace m65xx {
 		ExecPtrRet execIZPX_T3()		// Dummy fetch while add happens
 		{
 			Bus->readAddr(TempData);
-			TempAddr += X;
+			TempData += X;
 			return &type::execIZPX_T4;
 		}
 		ExecPtrRet execIZPX_T4()		// Fetch low byte of effective address
