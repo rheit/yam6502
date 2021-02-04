@@ -6,6 +6,17 @@
 #include "yam6502ops.h"
 
 namespace m65xx {
+	enum : uint8_t {
+		FLAG_C = 0x01,
+		FLAG_Z = 0x02,
+		FLAG_I = 0x04,
+		FLAG_D = 0x08,
+		FLAG_B = 0x10,
+		FLAG_RESERVED = 0x20,
+		FLAG_V = 0x40,
+		FLAG_N = 0x80
+	};
+
 	template<typename T>
 	concept HasGetRDY = requires (T bus) {
 		{ bus.getRDY() } -> std::convertible_to<bool>;
@@ -143,16 +154,6 @@ namespace m65xx {
 		}
 
 		enum : uint16_t { STACK_PAGE = 0x100 };
-		enum : uint8_t {
-			FLAG_C = 0x01,
-			FLAG_Z = 0x02,
-			FLAG_I = 0x04,
-			FLAG_D = 0x08,
-			FLAG_B = 0x10,
-			FLAG_RESERVED = 0x20,
-			FLAG_V = 0x40,
-			FLAG_N = 0x80
-		};
 
 	private:
 		class StatusFlags {
