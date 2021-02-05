@@ -1,10 +1,38 @@
 #include <type_traits>
 #include <fstream>
 #include <iostream>
-#include <conio.h>
 #include <cerrno>
 
 #include "yam6502.h"
+
+#ifdef _WIN32
+#include <conio.h>
+#else
+#include <unistd.h>
+#include <termios.h>
+
+char _getch()
+{
+	char buf = 0;
+	struct termios old {};
+	fflush(stdout);
+	if (tcgetattr(0, &old) < 0)
+		perror("tcsetattr()");
+	old.c_lflag &= ~ICANON;
+	old.c_lflag &= ~ECHO;
+	old.c_cc[VMIN] = 1;
+	old.c_cc[VTIME] = 0;
+	if (tcsetattr(0, TCSANOW, &old) < 0)
+		perror("tcsetattr ICANON");
+	if (read(0, &buf, 1) < 0)
+		perror("read()");
+	old.c_lflag |= ICANON;
+	old.c_lflag |= ECHO;
+	if (tcsetattr(0, TCSADRAIN, &old) < 0)
+		perror("tcsetattr ~ICANON");
+	return buf;
+}
+#endif
 
 enum class IO : uint16_t {
 	GetChar = 0xff84,
@@ -58,9 +86,10 @@ void run_functional_test()
 {
 	TestBus bus;
 	{
-		std::basic_ifstream<uint8_t> input("tests/bin/6502_functional_test.bin", std::ios_base::binary);
-		if (input.read(bus.memory, 65536).gcount() != 65536) {
+		std::ifstream input("tests/bin/6502_functional_test.bin", std::ios::binary);
+		if (input.read(reinterpret_cast<char *>(bus.memory), 65536).gcount() != 65536) {
 			std::cerr << "Failed reading 65536 bytes from 6502_functional_test.bin\n";
+			return;
 		}
 	}
 	m65xx::M6502<TestBus *> cpu(&bus);
@@ -70,7 +99,7 @@ void run_functional_test()
 		if (bus.last_addr == static_cast<uint16_t>(IO::ErrorTrap)) {
 			bus.dump_mem(zero_page, zp_bss_end);
 			bus.dump_mem(data_segment, data_bss_end);
-			int i = 0;	// Error!
+			[[maybe_unused]] int i = 0;	// Error!
 		}
 		if (0 && cpu.getSync()) {
 			/*

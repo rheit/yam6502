@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <cassert>
 #include <string>
+#include <functional>
 
 #include "yam6502ops.h"
 
@@ -79,10 +80,10 @@ namespace m65xx {
 		// Do something
 		void reset()
 		{
-			IR = op::BRK;
+			IR = static_cast<uint8_t>(op::BRK);
 			AddrMode = am::brk;
 			BaseOp = op::RESET;
-			State = &M6502<T>::execBRK_T2;
+			State = &M6502<T>::execBreak_T2;
 		}
 
 		void tick(int cycles = 1)
