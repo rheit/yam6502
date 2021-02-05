@@ -76,14 +76,27 @@ struct TestBus {
 	uint16_t last_addr = ~0;
 };
 
-#define zero_page 0
-#define zp_bss_end 0x52
-
-#define data_segment 0x200
-#define data_bss_end 0x27b
+void print_p(unsigned p)
+{
+	printf("P=%02X [%c%c%c%c%c%c]",
+		p & 0xFF,
+		p & m65xx::FLAG_N ? 'N' : '.',
+		p & m65xx::FLAG_V ? 'V' : '.',
+		p & m65xx::FLAG_D ? 'D' : '.',
+		p & m65xx::FLAG_I ? 'I' : '.',
+		p & m65xx::FLAG_Z ? 'Z' : '.',
+		p & m65xx::FLAG_C ? 'C' : '.'
+	);
+}
 
 void run_functional_test()
 {
+	const uint16_t zero_page = 0;
+	const uint16_t zp_bss_end = 0x52;
+
+	const uint16_t data_segment = 0x200;
+	const uint16_t data_bss_end = 0x27b;
+
 	TestBus bus;
 	{
 		std::ifstream input("tests/bin/6502_functional_test.bin", std::ios::binary);
@@ -102,28 +115,49 @@ void run_functional_test()
 			[[maybe_unused]] int i = 0;	// Error!
 		}
 		if (0 && cpu.getSync()) {
-			/*
-			auto p = cpu.getP();
-			printf("A=%02X X=%02X Y=%02X S=%02X P=%02X [%c%c%c%c%c%c]  %s\n",
-				cpu.getA(),
-				cpu.getX(),
-				cpu.getY(),
-				cpu.getSP(),
-				p,
-				p & m65xx::FLAG_N ? 'N' : '.',
-				p & m65xx::FLAG_V ? 'V' : '.',
-				p & m65xx::FLAG_D ? 'D' : '.',
-				p & m65xx::FLAG_I ? 'I' : '.',
-				p & m65xx::FLAG_Z ? 'Z' : '.',
-				p & m65xx::FLAG_C ? 'C' : '.',
-				cpu.disasmOp(cpu.getPC() - 1, true).c_str());
-				*/
+			printf("A=%02X X=%02X Y=%02X S=%02X ",
+				cpu.getA(), cpu.getX(), cpu.getY(), cpu.getSP());
+			print_p(cpu.getP());
+			printf("  %s\n", cpu.disasmOp(cpu.getPC() - 1, true).c_str());
 		}
+	}
+}
+
+void run_decimal_test()
+{
+	const auto decimal_org = 0x200;
+	enum {
+		N1, N2, HA, HNVZC, DA, DNVZC, AR, NF, VF, ZF, CF, ERROR
+	};
+
+	TestBus bus;
+	{
+		std::ifstream input("tests/bin/6502_decimal_test.bin", std::ios::binary | std::ios::in);
+		if (!input.read(reinterpret_cast<char *>(bus.memory + decimal_org), 65536 - decimal_org) && input.bad()) {
+			std::cerr << "Failed reading 6502_decimal_test.bin\n";
+		}
+	}
+	m65xx::M6502<TestBus *> cpu(&bus);
+	cpu.setPC(decimal_org);
+	while (bus.last_addr != static_cast<uint16_t>(IO::Done)) {
+		cpu.tick();
+	}
+	if (bus.memory[ERROR]) {
+		printf("ERROR for $%02X + $%02x + %d:\n", bus.memory[N1], bus.memory[N2], cpu.getY());
+		auto expect_p = bus.memory[NF] | bus.memory[VF] | bus.memory[ZF] | bus.memory[CF];
+		printf("   Expected: A=$%02X, ", bus.memory[AR]);
+		print_p(expect_p);
+		printf("\n Got binary: A=$%02X, ", bus.memory[HA]);
+		print_p(bus.memory[HNVZC]);
+		printf("\nGot decimal: A=$%02X, ", bus.memory[DA]);
+		print_p(bus.memory[DNVZC]);
+		printf("\n");
 	}
 }
 
 int main()
 {
 	run_functional_test();
+	run_decimal_test();
 	return 0;
 }
