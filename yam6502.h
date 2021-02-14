@@ -20,19 +20,19 @@ namespace m65xx {
 
 	template<typename T>
 	concept HasGetRDY = requires (T bus) {
-		{ bus.getRDY() } -> std::convertible_to<bool>;
+		{ bus->getRDY() } -> std::convertible_to<bool>;
 	};
 	template<typename T>
 	concept HasGetIRQB = requires (T bus) {
-		{ bus.getIRGB() } -> std::convertible_to<bool>;
+		{ bus->getIRQB() } -> std::convertible_to<bool>;
 	};
 	template<typename T>
 	concept HasGetNMIB = requires (T bus) {
-		{ bus.getNMIB() } -> std::convertible_to<bool>;
+		{ bus->getNMIB() } -> std::convertible_to<bool>;
 	};
 	template<typename T>
 	concept HasGetRESB = requires (T bus) {
-		{ bus.getRESB() } -> std::convertible_to<bool>;
+		{ bus->getRESB() } -> std::convertible_to<bool>;
 	};
 
 	/*
@@ -84,6 +84,10 @@ namespace m65xx {
 			AddrMode = am::brk;
 			BaseOp = op::RESET;
 			State = &M6502<T>::execBreak_T2;
+			NextIrqPending = IrqPending = false;
+			NextNmiPending = NmiPending = false;
+			LastNMIB = checkNMIB();
+			InterruptGen = false;
 		}
 
 		void tick(int cycles = 1)
@@ -92,6 +96,7 @@ namespace m65xx {
 			while (cycles-- > 0) {
 				assert(next != nullptr);
 				Sync = false;
+				checkInterruptPins();
 				next = std::invoke(next, this);
 			}
 			State = next;
@@ -206,8 +211,14 @@ namespace m65xx {
 		uint16_t TempAddr = 0;
 		uint8_t TempData = 0;
 		uint8_t IR = 0;
-		bool Sync = false;
 		StatusFlags P;
+		bool Sync = false;
+		bool IrqPending = false;
+		bool NextIrqPending = false;
+		bool NmiPending = false;
+		bool NextNmiPending = false;
+		bool LastNMIB = true;
+		bool InterruptGen = false;
 
 		// Helper functions to access optional pins on the bus
 		[[nodiscard]] constexpr bool checkRDY() const
@@ -266,11 +277,61 @@ namespace m65xx {
 		[[nodiscard]] ExecPtrRet nextInstr()
 		{
 			Sync = true;
-			IR = Bus->readAddr(PC++);
+			auto op = Bus->readAddr(PC);
+			if (InterruptGen) {
+				op = 0;
+			}
+			else {
+				++PC;
+			}
+			IR = op;
 			const BaseOpcode &base = Opc6502[IR];
 			AddrMode = base.Mode;
-			BaseOp = base.Op;
+			if (InterruptGen) {
+				BaseOp = NmiPending ? op::NMI : op::IRQ;
+			}
+			else {
+				BaseOp = base.Op;
+			}
 			return ModeTable[static_cast<int>(base.Mode)].Exec;
+		}
+
+		// Check the interrupt pins and update state accordingly. For reference:
+		// http://visual6502.org/wiki/index.php?title=6502_Interrupt_Recognition_Stages_and_Tolerances
+		constexpr void checkInterruptPins()
+		{
+			// When IRQ changes, that change will be reflected in IRQP in the next
+			// cycle. If IRQP is high during T0, then INTG will go high, causing the
+			// next cycle (T1) to substitute BRK for the instruction, but only if
+			// the interrupt disable bit is clear.
+			IrqPending = NextIrqPending;
+			NextIrqPending = !checkIRQB();
+
+			// NMI triggers when the NMIB line goes from high to low. Unlike IRQB,
+			// it does not need to still be low when T0 is reached to be serviced.
+			// However, if NMIB is low only during the two cycles when BRK fetches
+			// the vector address, then the NMI will be "lost" because the
+			// processor explicitly blocks reading of the NMIB line during these
+			// cycles to avoid a mixed vector read for both IRQ and NMI (not
+			// emulated).
+			bool nmib = checkNMIB();
+			if (!NextNmiPending && LastNMIB && !nmib) {
+				NextNmiPending = true;
+			}
+			else if (NextNmiPending) {
+				NmiPending = true;
+				NextNmiPending = false;
+			}
+			LastNMIB = nmib;
+		}
+
+		// For all T0 and also T2 of branches, check if the next instruction fetch
+		// should substitute a BRK.
+		constexpr void intCheckT0()
+		{
+			if (NmiPending || (!P.getI() && IrqPending)) {
+				InterruptGen = true;
+			}
 		}
 
 		/**************** Opcode state definitions past this point ****************/
@@ -285,6 +346,7 @@ namespace m65xx {
 		ExecPtrRet execImplicit_T02()	// Dummy read of nonexistant operand
 		{
 			Bus->readAddr(PC);
+			intCheckT0();
 			return &type::execCommon_T1;
 		}
 
@@ -293,6 +355,7 @@ namespace m65xx {
 		ExecPtrRet execAccumulator_T02() // Dummy read while the ALU does its thing
 		{
 			Bus->readAddr(PC);
+			intCheckT0();
 			return &type::execAccumulator_T1;
 		}
 		ExecPtrRet execAccumulator_T1()	// Perform operation + fetch next instruction
@@ -310,6 +373,7 @@ namespace m65xx {
 		ExecPtrRet execCommon_T0()		// Read operand
 		{
 			TempData = Bus->readAddr(TempAddr);
+			intCheckT0();
 			return &type::execCommon_T1;
 		}
 		ExecPtrRet execCommon_T1()		// Perform operation + fetch next instruction
@@ -323,6 +387,7 @@ namespace m65xx {
 		ExecPtrRet execImmediate_T02()	// Read operand
 		{
 			TempData = Bus->readAddr(PC++);
+			intCheckT0();
 			return &type::execCommon_T1;
 		}
 
@@ -462,6 +527,7 @@ namespace m65xx {
 			// the operator must be invoked separately from the writeAddr call.
 			uint8_t output = std::invoke(ExecOp[static_cast<int>(BaseOp)], this, TempData);
 			Bus->writeAddr(TempAddr, output);
+			intCheckT0();
 			return &type::execCommon_Sto_T1;
 		}
 		ExecPtrRet execCommon_Sto_T1()	// Fetch next instruction
@@ -751,6 +817,7 @@ namespace m65xx {
 		{
 			Bus->writeAddr(STACK_PAGE | SP, std::invoke(ExecOp[static_cast<int>(BaseOp)], this, 0));
 			--SP;
+			intCheckT0();
 			return &type::execCommon_Sto_T1;
 		}
 
@@ -770,6 +837,7 @@ namespace m65xx {
 		ExecPtrRet execPull_T0()		// Fetch data from stack
 		{
 			TempData = Bus->readAddr(STACK_PAGE | SP);
+			intCheckT0();
 			return &type::execCommon_T1;
 		}
 
@@ -783,6 +851,7 @@ namespace m65xx {
 		ExecPtrRet execJump_T0()		// Fetch high byte of target address
 		{
 			TempAddr |= Bus->readAddr(PC) << 8;
+			intCheckT0();
 			return &type::execJump_T1;
 		}
 		ExecPtrRet execJump_T1()		// Fetch next instruction
@@ -813,6 +882,7 @@ namespace m65xx {
 			// On the NMOS 6502, a page boundary is not crossed here
 			uint16_t addr = (TempAddr & 0xFF00) | ((TempAddr + 1) & 0x00FF);
 			PC = TempData | (Bus->readAddr(addr) << 8);
+			intCheckT0();
 			return &type::execJumpInd_T1;
 		}
 		ExecPtrRet execJumpInd_T1()		// Fetch next instruction
@@ -845,6 +915,7 @@ namespace m65xx {
 		ExecPtrRet execCall_T0()		// Fetch high byte of target address
 		{
 			TempAddr |= Bus->readAddr(PC) << 8;
+			intCheckT0();
 			return &type::execJump_T1;
 		}
 
@@ -874,6 +945,7 @@ namespace m65xx {
 		{
 			PC = TempAddr;
 			Bus->readAddr(PC++);
+			intCheckT0();
 			return &type::execCommon_Sto_T1;
 		}
 
@@ -926,6 +998,7 @@ namespace m65xx {
 		}
 		ExecPtrRet execBreak_T6()		// Fetch low order byte of interrupt vector
 		{
+			InterruptGen = false;
 			P.setI(true);
 			TempAddr = Bus->readAddr(opToVector(BaseOp));
 			return &type::execBreak_T0;
@@ -933,6 +1006,10 @@ namespace m65xx {
 		ExecPtrRet execBreak_T0()		// Fetch high order byte of interrupt vector
 		{
 			PC = TempAddr | (Bus->readAddr(opToVector(BaseOp) + 1) << 8);
+			if (BaseOp == op::NMI) {
+				NmiPending = false;
+			}
+			intCheckT0();
 			return &type::execCommon_Sto_T1;
 		}
 
@@ -961,6 +1038,7 @@ namespace m65xx {
 		ExecPtrRet execRTI_T0()			// Pull PCH from stack
 		{
 			PC = TempAddr | (Bus->readAddr(STACK_PAGE | SP) << 8);
+			intCheckT0();
 			return &type::execCommon_Sto_T1;
 		}
 
@@ -969,6 +1047,7 @@ namespace m65xx {
 		ExecPtrRet execBranch_T2()	// Read offset
 		{
 			TempData = Bus->readAddr(PC++);
+			intCheckT0();
 			return &type::execBranch_T3;
 		}
 		ExecPtrRet execBranch_T3()	// Check condition
@@ -1003,6 +1082,7 @@ namespace m65xx {
 		ExecPtrRet execBranch_T0()	// Take branch, carry complete
 		{
 			PC = TempAddr;
+			intCheckT0();
 			return nextInstr();
 		}
 
@@ -1013,22 +1093,22 @@ namespace m65xx {
 			Bus->readAddr(PC++);
 			return &type::execHalt_T3;
 		}
-		ExecPtrRet execHalt_T3() // Put FFFF on the address bus
+		ExecPtrRet execHalt_T3() // Put $FFFF on the address bus
 		{
 			Bus->readAddr(0xFFFF);
 			return &type::execHalt_T4;
 		}
-		ExecPtrRet execHalt_T4() // Put FFFE on the address bus
+		ExecPtrRet execHalt_T4() // Put $FFFE on the address bus
 		{
 			Bus->readAddr(0xFFFE);
 			return &type::execHalt_T5;
 		}
-		ExecPtrRet execHalt_T5() // Put FFFE on the address bus
+		ExecPtrRet execHalt_T5() // Put $FFFE on the address bus
 		{
 			Bus->readAddr(0xFFFE);
 			return &type::execHalt_TX;
 		}
-		ExecPtrRet execHalt_TX() // Put FFFF on the address bus until reset
+		ExecPtrRet execHalt_TX() // Put $FFFF on the address bus until reset
 		{
 			Bus->readAddr(0xFFFF);
 			return &type::execHalt_TX;

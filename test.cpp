@@ -35,10 +35,11 @@ char _getch()
 #endif
 
 enum class IO : uint16_t {
-	GetChar = 0xff84,
+	ErrorTrap = 0xff80,
 	PutChar = 0xff81,
+	GetChar = 0xff84,
 	Done = 0xff88,
-	ErrorTrap = 0xff80
+	InterruptPort = 0xff8c,
 };
 
 struct TestBus {
@@ -76,6 +77,17 @@ struct TestBus {
 	uint16_t last_addr = ~0;
 };
 
+struct TestBusWithInterrupts : public TestBus {
+	[[nodiscard]] bool getIRQB() const
+	{
+		return !(memory[static_cast<int>(IO::InterruptPort)] & 1);
+	}
+	[[nodiscard]] bool getNMIB() const
+	{
+		return !(memory[static_cast<int>(IO::InterruptPort)] & 2);
+	}
+};
+
 void print_p(unsigned p)
 {
 	printf("P=%02X [%c%c%c%c%c%c]",
@@ -97,6 +109,7 @@ void run_functional_test()
 	const uint16_t data_segment = 0x200;
 	const uint16_t data_bss_end = 0x27b;
 
+	printf("Running functional tests\n");
 	TestBus bus;
 	{
 		std::ifstream input("tests/bin/6502_functional_test.bin", std::ios::binary);
@@ -123,6 +136,45 @@ void run_functional_test()
 	}
 }
 
+void run_interrupt_test()
+{
+	const uint16_t zero_page = 0;
+	const uint16_t zp_bss = 6;
+
+	const uint16_t data_segment = 0x200;
+	const uint16_t data_bss = 0x204;
+
+	const uint16_t code_segment = 0x400;
+
+	printf("Running interrupt tests\n");
+	TestBusWithInterrupts bus;
+	{
+		std::ifstream input("tests/bin/6502_interrupt_test.bin", std::ios::binary);
+		if (input.read(reinterpret_cast<char *>(bus.memory + code_segment), 65536 - code_segment) && input.bad()) {
+			std::cerr << "Failed reding 6502_interrupt_test.bin\n";
+			return;
+		}
+	}
+	m65xx::M6502<decltype(&bus)> cpu(&bus);
+	cpu.setPC(code_segment);
+	while (bus.last_addr != static_cast<uint16_t>(IO::Done)) {
+		cpu.tick();
+#if 0
+		if (bus.last_addr == static_cast<uint16_t>(IO::ErrorTrap)) {
+			bus.dump_mem(zero_page, zp_bss);
+			bus.dump_mem(data_segment, data_bss);
+			[[maybe_unused]] int i = 0;	// Error!
+		}
+		if (1 && cpu.getSync()) {
+			printf("A=%02X X=%02X Y=%02X S=%02X ",
+				cpu.getA(), cpu.getX(), cpu.getY(), cpu.getSP());
+			print_p(cpu.getP());
+			printf("  %s\n", cpu.disasmOp(cpu.getPC() - 1, true).c_str());
+		}
+#endif
+	}
+}
+
 void run_decimal_test()
 {
 	const auto decimal_org = 0x200;
@@ -130,11 +182,13 @@ void run_decimal_test()
 		N1, N2, HA, HNVZC, DA, DNVZC, AR, NF, VF, ZF, CF, ERROR
 	};
 
+	printf("Running decimal tests\n");
 	TestBus bus;
 	{
 		std::ifstream input("tests/bin/6502_decimal_test.bin", std::ios::binary | std::ios::in);
 		if (!input.read(reinterpret_cast<char *>(bus.memory + decimal_org), 65536 - decimal_org) && input.bad()) {
 			std::cerr << "Failed reading 6502_decimal_test.bin\n";
+			return;
 		}
 	}
 	m65xx::M6502<TestBus *> cpu(&bus);
@@ -159,5 +213,6 @@ int main()
 {
 	run_functional_test();
 	run_decimal_test();
+	run_interrupt_test();
 	return 0;
 }

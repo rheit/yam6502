@@ -81,13 +81,15 @@ rabs    jsr rspace
         inx
         cpx #(data_bss-data_segment)
         bne rabs
+    if rep_int != 1
 ;ask to continue
         rprt rmsg_cont
 rerr1   jsr rget
         cmp #'S'
         beq rskip
         cmp #'C'
-        bne rerr1        
+        bne rerr1 
+    endif
 ;restore registers
         pla
         tay
@@ -96,6 +98,7 @@ rerr1   jsr rget
         pla 
         plp
         rts
+    if rep_int != 1
 ;skip the current test
 rskip   lda #$f0            ;already end of tests?
         cmp test_case
@@ -133,6 +136,7 @@ rskipe  jmp (zpt)           ;start next test or rerun at end of tests
         
 rmark   lda #0              ;begin of test search pattern
         sta test_case
+    endif
 
 ;show test has ended, ask to repeat
 report_success
