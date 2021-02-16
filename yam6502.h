@@ -1538,7 +1538,7 @@ namespace m65xx {
 		{
 			data &= A;
 			if (!P.getD()) {
-				uint8_t rored = data = (data >> 1) | (P.getC() << 7);
+				uint8_t rored = (data >> 1) | (P.getC() << 7);
 				P.setC(!!(data & 0x80));	// C = input bit 7
 				P.setV(rored ^ data);		// V = input bit 7 xor input bit 6
 				P.setNZ(rored);
