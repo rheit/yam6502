@@ -1665,14 +1665,15 @@ namespace m65xx {
 		// If a page boundary is crossed, the high byte of the target address is
 		// ANDed with the value stored. execAbsX_Sto_T4 and execAbsY_Sto_T4 store
 		// the preindexed address high byte in TempData, which gets passed to us
-		// by execCommon_Sto_T0. If RDY is pulled low during T0 (which is when these
-		// functions are called), then the & {H+1} is left off of the stored value.
+		// as prehi by execCommon_Sto_T0. If RDY is pulled low during T0 (which is
+		// when these functions are called), then the & {H+1} is left off of the
+		// stored value.
 
 		uint8_t doUnstableHi(uint8_t value, uint8_t prehi)
 		{
 			if (prehi != uint8_t(TempAddr >> 8)) {
 				// Page boundary was crossed
-				TempAddr &= uint16_t(value) << 8;
+				TempAddr &= (uint16_t(value) << 8) | 0xFF;
 			}
 			if (checkRDY()) {
 				value &= prehi + 1;
