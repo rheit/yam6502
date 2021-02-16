@@ -393,7 +393,7 @@ namespace m65xx {
 		{ op::BCC, am::rel },		// 90
 		{ op::STA, am::izy_sto },	// 91
 		{ op::KIL, am::imp },		// 92
-		{ op::AHX, am::izy },		// 93
+		{ op::AHX, am::izy_sto },	// 93
 		{ op::STY, am::zpx_sto },	// 94
 		{ op::STA, am::zpx_sto },	// 95
 		{ op::STX, am::zpy_sto },	// 96
@@ -401,10 +401,10 @@ namespace m65xx {
 		{ op::TYA, am::imp },		// 98
 		{ op::STA, am::aby_sto },	// 99
 		{ op::TXS, am::imp },		// 9A
-		{ op::TAS, am::aby },		// 9B
-		{ op::SHY, am::abx },		// 9C
+		{ op::TAS, am::aby_sto },	// 9B
+		{ op::SHY, am::abx_sto },	// 9C
 		{ op::STA, am::abx_sto },	// 9D
-		{ op::SHX, am::aby },		// 9E
+		{ op::SHX, am::aby_sto },	// 9E
 		{ op::AHX, am::aby_sto },	// 9F
 
 		{ op::LDY, am::imm },		// A0
