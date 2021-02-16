@@ -44,10 +44,16 @@ namespace m65xx {
 	};
 	*/
 	template<typename T>
-	requires requires(T bus, unsigned addr, uint8_t data) {
-		{ bus->readAddr(addr) } -> std::same_as<uint8_t>;
-		bus->writeAddr(addr, data);
-	}
+	// A requires clause here for the bus will prevent the bus from
+	// containing a pointer to this CPU type because the bus is an
+	// incomplete type at the time its pointer field is defined.
+	// So unless there is some clever solution I am unaware of, I'm
+	// leaving this commented out for now.
+	//
+	//requires requires(T bus, unsigned addr, uint8_t data) {
+	//	{ bus->readAddr(addr) } -> std::same_as<uint8_t>;
+	//	bus->writeAddr(addr, data);
+	//}
 	class M6502 {
 	public:
 		using type = M6502<T>;
