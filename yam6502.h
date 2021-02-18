@@ -43,20 +43,13 @@ namespace m65xx {
 		bus->WriteAddr(addr, data);
 	};
 	*/
-	template<typename T>
-	// A requires clause here for the bus will prevent the bus from
-	// containing a pointer to this CPU type because the bus is an
-	// incomplete type at the time its pointer field is defined.
-	// So unless there is some clever solution I am unaware of, I'm
-	// leaving this commented out for now.
-	//
-	//requires requires(T bus, unsigned addr, uint8_t data) {
-	//	{ bus->readAddr(addr) } -> std::same_as<uint8_t>;
-	//	bus->writeAddr(addr, data);
-	//}
+
+	// T = A pointer type to the bus used to read and write.
+	// trapcode = A trap opcode, if nonnegative.
+	template<typename T, int trap_code=-1>
 	class M6502 {
 	public:
-		using type = M6502<T>;
+		using type = M6502<T, trap_code>;
 
 		M6502(T bus) : Bus(bus) {}
 		M6502() = delete;
@@ -80,7 +73,7 @@ namespace m65xx {
 		void setX(uint8_t val) { X = val; }
 		void setY(uint8_t val) { Y = val; }
 		void setSP(uint16_t val) { SP = val & 0xFF; }
-		void setPC(uint16_t val) { PC = val; State = &type::execCommon_Sto_T1; }
+		void setPC(uint16_t val) { PC = val; State = &type::execFetch_T1; }
 		void setP(uint8_t val) { P = val; }
 
 		// Do something
@@ -113,7 +106,7 @@ namespace m65xx {
 		{
 			// I wanted to play with std::format, but it doesn't exist
 			// in the standard library yet, so back to the C library I go.
-			char buffer[40];	// ??? ($NNNN),Y
+			char buffer[48];
 			uint8_t opbyte[4] = { Bus->readAddr(addr) };
 			const auto &base = Opc6502[opbyte[0]];
 			const auto &info = ModeTable[static_cast<int>(base.Mode)];
@@ -142,6 +135,7 @@ namespace m65xx {
 				}
 			}
 			// Instruction neumonic
+			const char *opname = OpNames[base.Op];
 			buffpos += snprintf(buffer + buffpos, buffsize - buffpos, "%s", OpNames[base.Op]);
 
 			// Operand
@@ -152,6 +146,12 @@ namespace m65xx {
 				// Three spaces for a full-line disassembly; one space for just the instruction
 				buffpos += snprintf(buffer + buffpos, buffsize - buffpos, "%*c", full_line ? 3 : 1, ' ');
 				buffpos += snprintf(buffer + buffpos, buffsize - buffpos, info.Format, operand);
+			}
+			if constexpr (trap_code >= 0) {
+				if (opbyte[0] == trap_code) {
+					buffpos += snprintf(buffer + buffpos, buffsize - buffpos, "%*c[TRAP]",
+						full_line ? 38 - buffpos : 1, ' ');
+				}
 			}
 			return std::string(buffer, buffpos);
 		}
@@ -274,7 +274,7 @@ namespace m65xx {
 			operator ExecPtr() { return p; }
 			ExecPtr p;
 		};
-		using ExecOpPtr = uint8_t (M6502<T>::*)(uint8_t);
+		using ExecOpPtr = uint8_t (M6502::*)(uint8_t);
 
 		ExecPtr State = &type::execBreak_T2;
 		am AddrMode = am::brk;
@@ -286,6 +286,7 @@ namespace m65xx {
 			auto op = Bus->readAddr(PC);
 			if (InterruptGen) {
 				op = 0;
+				BaseOp = NmiPending ? op::NMI : op::IRQ;
 			}
 			else {
 				++PC;
@@ -293,10 +294,19 @@ namespace m65xx {
 			IR = op;
 			const BaseOpcode &base = Opc6502[IR];
 			AddrMode = base.Mode;
-			if (InterruptGen) {
-				BaseOp = NmiPending ? op::NMI : op::IRQ;
-			}
-			else {
+			if (!InterruptGen) {
+				if constexpr (trap_code >= 0) {
+					if (op == trap_code) {
+						// The trap handler is called with a reference to this
+						// CPU and the address of the trap opcode. PC points to
+						// the byte after the opcode. The handler should return
+						// true if it handled the opcode or false to let default
+						// handling continue.
+						if (Bus->trap(*this, PC - 1)) {
+							return &type::execFetch_T1;
+						}
+					}
+				}
 				BaseOp = base.Op;
 			}
 			return ModeTable[static_cast<int>(base.Mode)].Exec;
@@ -534,9 +544,9 @@ namespace m65xx {
 			uint8_t output = std::invoke(ExecOp[static_cast<int>(BaseOp)], this, TempData);
 			Bus->writeAddr(TempAddr, output);
 			intCheckT0();
-			return &type::execCommon_Sto_T1;
+			return &type::execFetch_T1;
 		}
-		ExecPtrRet execCommon_Sto_T1()	// Fetch next instruction
+		ExecPtrRet execFetch_T1()	// Fetch next instruction
 		{
 			return nextInstr();
 		}
@@ -824,7 +834,7 @@ namespace m65xx {
 			Bus->writeAddr(STACK_PAGE | SP, std::invoke(ExecOp[static_cast<int>(BaseOp)], this, 0));
 			--SP;
 			intCheckT0();
-			return &type::execCommon_Sto_T1;
+			return &type::execFetch_T1;
 		}
 
 		// Pull Operation ================================================= 4 cycles
@@ -952,7 +962,7 @@ namespace m65xx {
 			PC = TempAddr;
 			Bus->readAddr(PC++);
 			intCheckT0();
-			return &type::execCommon_Sto_T1;
+			return &type::execFetch_T1;
 		}
 
 		// BRK/IRQ/NMI/RESET ============================================== 7 cycles
@@ -1016,7 +1026,7 @@ namespace m65xx {
 				NmiPending = false;
 			}
 			intCheckT0();
-			return &type::execCommon_Sto_T1;
+			return &type::execFetch_T1;
 		}
 
 		// Return from Interrupt ========================================== 6 cycles
@@ -1045,7 +1055,7 @@ namespace m65xx {
 		{
 			PC = TempAddr | (Bus->readAddr(STACK_PAGE | SP) << 8);
 			intCheckT0();
-			return &type::execCommon_Sto_T1;
+			return &type::execFetch_T1;
 		}
 
 		// Branches ============================================== 2, 3, or 4 cycles
