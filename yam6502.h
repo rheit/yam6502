@@ -140,12 +140,15 @@ namespace m65xx {
 
 			// Operand
 			if (base.Mode == am::rel) {
-				operand = addr + 2 + static_cast<int8_t>(opbyte[1]);
+				operand = static_cast<uint16_t>(addr + 2 + static_cast<int8_t>(opbyte[1]));
 			}
 			if (info.Format[0]) {
 				// Three spaces for a full-line disassembly; one space for just the instruction
 				buffpos += snprintf(buffer + buffpos, buffsize - buffpos, "%*c", full_line ? 3 : 1, ' ');
 				buffpos += snprintf(buffer + buffpos, buffsize - buffpos, info.Format, operand);
+			}
+			if (base.Mode == am::rel) {
+				buffpos += snprintf(buffer + buffpos, buffsize - buffpos, "   [%+d]", static_cast<int8_t>(opbyte[1]));
 			}
 			if constexpr (trap_code >= 0) {
 				if (opbyte[0] == trap_code) {
