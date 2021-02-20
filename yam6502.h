@@ -34,6 +34,10 @@ namespace m65xx {
 	concept HasGetRESB = requires (T bus) {
 		{ bus->getRESB() } -> std::convertible_to<bool>;
 	};
+	template<typename T, typename U>
+	concept HasBreakHandler = requires (T bus, U &cpu, uint16_t addr) {
+		{ bus->breakHandler(cpu, addr) } -> std::convertible_to<bool>;
+	};
 
 	/*
 	template<typename T>
@@ -306,6 +310,15 @@ namespace m65xx {
 						// true if it handled the opcode or false to let default
 						// handling continue.
 						if (Bus->trap(*this, PC - 1)) {
+							return &type::execFetch_T1;
+						}
+					}
+				}
+				if constexpr (HasBreakHandler<T, M6502>) {
+					// Semantics for the break handler are the same as for the
+					// trap handler.
+					if (op == 0) {
+						if (Bus->breakHandler(*this, PC - 1)) {
 							return &type::execFetch_T1;
 						}
 					}
