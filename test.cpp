@@ -284,6 +284,7 @@ struct MiniC64Bus {
 	MiniCIA CIA2;
 	double fp_accum = 0;
 	double fp_arg = 0;
+	bool DontTrapBreak = false;
 
 	enum class State {
 		Running,
@@ -416,6 +417,10 @@ int MiniC64Bus::loadTest(std::string_view testname, bool reloc, uint16_t loadadd
 		}
 		path /= name_ascii;
 		path += ".prg";
+
+		// The TRAP* tests expect to get a BRK sequence.
+		DontTrapBreak = testname.compare(0, 4, "TRAP", 4) == 0;
+
 		auto size = std::filesystem::file_size(path) - 2;
 		std::ifstream input(path, std::ios::binary);
 		uint8_t loadlo, loadhi;
@@ -459,7 +464,7 @@ std::string MiniC64Bus::pet2ascii(uint8_t pet)
 
 bool MiniC64Bus::breakHandler(cputype &cpu, uint16_t addr)
 {
-	if (addr >= DONEADDR) {
+	if (!DontTrapBreak && addr >= DONEADDR) {
 		fprintf(stderr, "Unhandled routine at $%04X\n", addr);
 		fprintf(stderr, "Zero page dump:\n");
 		dump_mem(stderr, memory, 0, 256);
