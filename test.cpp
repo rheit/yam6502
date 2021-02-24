@@ -264,8 +264,6 @@ struct MiniC64Bus {
 	constexpr static inline uint16_t CIA2CRA = 0xDD0E;	// CIA 2 control register A
 	constexpr static inline uint16_t CIA2CRB = 0xDD0F;	// CIA 2 control register B
 
-	constexpr static inline uint16_t LOAD_INTERNAL = 0xE16F; // branchwrap test jumps here
-
 	constexpr static inline uint16_t PULS = 0xFF48;		// IRQ handler
 	constexpr static inline uint16_t SETNAM = 0xFDF9;	// Set filename parameters
 
@@ -323,7 +321,6 @@ void MiniC64Bus::tick()
 void MiniC64Bus::init(cputype &cpu)
 {
 	memory[DONEADDR] = TRAP;
-	memory[LOAD_INTERNAL] = TRAP;
 
 	memory[VEC_SETNAM] = 0x4C;	// JMP
 	writeWord(VEC_SETNAM + 1, SETNAM);
@@ -497,19 +494,6 @@ bool MiniC64Bus::trap(cputype &cpu, uint16_t addr)
 		}
 		return true;
 	}
-
-	case LOAD_INTERNAL:
-		// Branchwrap test jumps to here to start mmufetch test.
-		// That and the mmu test are C64-specific, so jump to the
-		// cputiming test.
-		if (auto addr = loadTest("cputiming", false, 0); addr >= 0) {
-			startTest(cpu, addr);
-		}
-		else {
-			std::cerr << "Failed loading cputiming\n";
-			state = State::Failed;
-		}
-		return true;
 
 	case VEC_CHROUT:
 		std::cout << pet2ascii(cpu.getA());

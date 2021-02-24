@@ -1,17 +1,17 @@
 ; original source file: n/a (broken), this was recreated from a disassembly
 ; slightly updated so the test does actually fail when it behaves wrong
 ;-------------------------------------------------------------------------------
-        * = $0801
 
-        .byte $12, $08, $08, $00
-        .byte $97, $37, $38, $30
-        .byte $2c, $30, $3a, $9e
-        .byte $32, $30, $37, $33
-        .byte 0,0,0
+            .include "common.asm"
+            .include "printhb.asm"
+            ;.include "waitborder.asm"
+            ;.include "waitkey.asm"
+            ;.include "showregs.asm"
 
-        lda #$01
-        sta $030c
-        jmp main
+;-------------------------------------------------------------------------------
+thisname:   .null "branchwrap"  ; name of this test
+nextname:   .null "cputiming"   ; name of next test, "-" means no more tests
+;-------------------------------------------------------------------------------
 
 irqdisable
         lda #$7f
@@ -32,11 +32,6 @@ irqenable
         rts
 
 main
-        jsr print
-        .byte $0d
-        .text "{up}branchwrap"
-        .byte 0
-
         jsr irqdisable
         lda #$10  ; bpl
         sta $ffbe
@@ -151,57 +146,13 @@ failed:
         .text " - error"
         .byte $0d, 0
 
-        lda #$ff       ; failure
-        sta $d7ff
+        #SET_EXIT_CODE_FAILURE
+
         lda #10
         sta $d020
-        jmp *
-        
+wait:
+        jsr $ffe4
+        beq wait
+
 passed:
-        jsr print
-        .text " - ok"
-        .byte $0d, 0
-
-        lda #0         ; success
-        sta $d7ff
-load
-        lda #$2f
-        sta $00
-        jsr print
-
-name     .text "mmufetch"
-namelen  = *-name
-         .byte 0
-         lda #0
-         sta $0a
-         sta $b9
-         lda #namelen
-         sta $b7
-         lda #<name
-         sta $bb
-         lda #>name
-         sta $bc
-         pla
-         pla
-         jmp $e16f
-
-print    pla
-         .block
-         sta print0+1
-         pla
-         sta print0+2
-         ldx #1
-print0   lda !*,x
-         beq print1
-         jsr $ffd2
-         inx
-         bne print0
-print1   sec
-         txa
-         adc print0+1
-         sta print2+1
-         lda #0
-         adc print0+2
-         sta print2+2
-print2   jmp !*
-         .bend
+        rts ; success
