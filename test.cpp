@@ -561,7 +561,7 @@ bool MiniC64Bus::trap(cputype &cpu, uint16_t addr)
 		return true;
 
 	case LINPRNT:
-		printf("%u", (cpu.getX() << 8) | cpu.getA());
+		printf("%u", (cpu.getA() << 8) | cpu.getX());
 		return true;
 	}
 	return false;
