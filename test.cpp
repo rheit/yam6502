@@ -500,7 +500,7 @@ void MiniC64Bus::startTest(cputype &cpu, uint16_t loadaddr)
 	// Set up top of stack so RTS goes to DONEADDR
 	writeWord(0x1FE, DONEADDR - 1);
 	cpu.setSP(0x1FD);
-	cpu.setP(m65xx::FLAG_I);
+	cpu.setP(0);
 
 	// Find the real program immediately after the BASIC stub.
 	auto addr = readWord(loadaddr);
