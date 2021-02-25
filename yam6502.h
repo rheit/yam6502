@@ -183,8 +183,8 @@ namespace m65xx {
 		public:
 			constexpr void setN(uint8_t val) { N = val; }
 			constexpr void setV(uint8_t val) { V = val; }
-			constexpr void setD(bool flag) { DI = (DI & ~FLAG_D) | (flag ? FLAG_D : 0); }
-			constexpr void setI(bool flag) { DI = (DI & ~FLAG_I) | (flag ? FLAG_I : 0); }
+			constexpr void setD(bool flag) { if (flag) DI |= FLAG_D; else DI &= ~FLAG_D; }
+			constexpr void setI(bool flag) { if (flag) DI |= FLAG_I; else DI &= ~FLAG_I; }
 			constexpr void setZ(bool flag) { Z = flag; }
 			constexpr void setC(bool flag) { C = flag; }
 
@@ -1104,10 +1104,10 @@ namespace m65xx {
 				// Branching, but we still need to read the instruction
 				// that would have been executed if we didn't branch.
 				Bus->readAddr(PC);
-				return &type::execBranch_T4;
+				return &type::execBranch_T0;
 			}
 		}
-		ExecPtrRet execBranch_T4()	// Take branch, if no carry
+		ExecPtrRet execBranch_T0()	// Take branch, if no carry
 		{
 			uint16_t newPC = PC + (int8_t)TempData;
 			if ((newPC ^ PC) & 0xFF00) {
@@ -1116,7 +1116,10 @@ namespace m65xx {
 				Bus->readAddr(PC);
 				// Complete branch in next cycle
 				TempAddr = newPC;
-				return &type::execBranch_T0;
+				// This cycle behaves as a T0 for interrupt purposes
+				// when the branch crosses a page boundary.
+				intCheckT0();
+				return &type::execBranch_T1;
 			}
 			else {
 				// No carry needed, so do real instruction fetch now
@@ -1124,10 +1127,9 @@ namespace m65xx {
 				return nextInstr();
 			}
 		}
-		ExecPtrRet execBranch_T0()	// Take branch, carry complete
+		ExecPtrRet execBranch_T1()	// Take branch, carry complete
 		{
 			PC = TempAddr;
-			intCheckT0();
 			return nextInstr();
 		}
 
