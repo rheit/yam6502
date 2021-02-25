@@ -10,7 +10,7 @@ DEBUG = 0
            
 ;------------------------------------------------------------------------------           
 thisname   .null "nmi"          ; name of this test
-nextname   .null "cia1tb123"    ; name of next test, "-" means no more tests
+nextname   .null "finish"       ; name of next test, "-" means no more tests
 ;-------------------------------------------------------------------------------           
 
 starttimer brk
