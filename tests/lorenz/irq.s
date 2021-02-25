@@ -479,6 +479,7 @@ main
            lda #0
            sta cmd
 
+           bit $dc0d
            lda #6
            sta wtest+1
            jsr setint
@@ -488,6 +489,7 @@ main
            stx wexp+1
            jsr wrong
 
+           bit $dc0d
            lda #5
            sta wtest+1
            jsr setint
@@ -497,6 +499,7 @@ main
            stx wexp+1
            jsr wrong
 
+           bit $dc0d
            lda #4
            sta wtest+1
            jsr setint
@@ -510,6 +513,7 @@ main
            stx wexp+1
            jsr wrong
 
+           bit $dc0d
            lda #3
            sta wtest+1
            jsr setint
@@ -519,6 +523,7 @@ main
            stx wexp+1
            jsr wrong
 
+           bit $dc0d
            lda #2
            sta wtest+1
            jsr setint

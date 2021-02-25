@@ -117,13 +117,13 @@ public:
 	[[nodiscard]] uint8_t readReg(int reg)
 	{
 		switch (reg) {
-		case 4:		return TimerA & 0xFF;
-		case 5:		return TimerA >> 8;
-		case 6:		return TimerB & 0xFF;
-		case 7:		return TimerB >> 8;
-		case 13:  { uint8_t ret = IrqData & IrqMask; IrqData = 0; return ret; }
-		case 14:	return CRA;
-		case 15:	return CRB;
+		case 4:		return TimerA.Counter & 0xFF;
+		case 5:		return TimerA.Counter >> 8;
+		case 6:		return TimerB.Counter & 0xFF;
+		case 7:		return TimerB.Counter >> 8;
+		case 13:	return readIrqData();
+		case 14:	return TimerA.Control;
+		case 15:	return TimerB.Control;
 		}
 		return 0;
 	}
@@ -131,109 +131,217 @@ public:
 	void writeReg(int reg, uint8_t data)
 	{
 		switch (reg) {
-		case 4:		setTimerLo(data, TimerALatch); break;
-		case 5:		setTimerHi(data, TimerALatch, CRA); break;
-		case 6:		setTimerLo(data, TimerBLatch); break;
-		case 7:		setTimerHi(data, TimerBLatch, CRB); break;
+		case 4:		TimerA.setLo(data); break;
+		case 5:		TimerA.setHi(data); break;
+		case 6:		TimerB.setLo(data); break;
+		case 7:		TimerB.setHi(data); break;
 		case 13:	writeIrqMask(data); break;
-		case 14:	CRA = data; break;
-		case 15:	CRB = data; break;
+		case 14:	TimerA.writeControl(data); break;
+		case 15:	TimerB.writeControl(data); break;
 		}
 	}
 
 	void tick()
 	{
-		runTimerA();
-		runTimerB();
+		TimerA.tick(*this, 1);
+		TimerB.tick(*this, 2);
+
+		// Set interrupt line
+		if (IrqDelay & 2) {
+			Interrupt = true;
+		}
+
+		IrqDelay <<= 1;
 	}
 
-	[[nodiscard]] uint16_t getTimerA() const
-	{
-		return TimerA;
-	}
-
-	[[nodiscard]] uint16_t getTimerB() const
-	{
-		return TimerB;
-	}
+	[[nodiscard]] uint16_t getTimerA() const;
+	[[nodiscard]] uint16_t getTimerB() const;
+	[[nodiscard]] uint8_t getTimerADelay() const;
+	[[nodiscard]] uint8_t getTimerBDelay() const;
 
 	[[nodiscard]] bool getIRQB() const
 	{
-		return !(IrqData & IrqMask);
+		return !Interrupt;
 	}
+
+	[[nodiscard]] uint8_t getICR() const;
 
 private:
-	uint16_t TimerALatch = 0, TimerA = 0;
-	uint16_t TimerBLatch = 0, TimerB = 0;
-	uint8_t CRA = 0, CRB = 0;
-	uint8_t IrqData = 0, IrqMask = 0x81;
-	bool TimerAOut = false;
+	uint8_t IrqData = 0;
+	uint8_t IrqMask = 0x81;		// As set by the C64 KERNAL
+	uint8_t IrqDelay = 0;
+	bool Interrupt = false;
 
-	void setTimerLo(uint8_t data, uint16_t &latch)
-	{
-		latch = (latch & 0xFF00) | data;
-	}
+	static constexpr inline uint8_t Count0    =   0x01;
+	static constexpr inline uint8_t Count1    =   0x02;
+	static constexpr inline uint8_t Count2    =   0x04;
+	static constexpr inline uint8_t Count3    =   0x08;
+	static constexpr inline uint8_t Load0     =   0x10;
+	static constexpr inline uint8_t Load1     =   0x20;
+	static constexpr inline uint8_t OneShot0  =   0x40;
+	static constexpr inline uint8_t DelayMask = ~(0x80 | Count0 | Load0 | OneShot0);
 
-	void setTimerHi(uint8_t data, uint16_t &latch, uint8_t &cr)
+	struct Timer
 	{
-		latch = (latch & 0x00FF) | (data << 8);
-		if (!(cr & START)) {
-			cr |= LOAD;
+		Timer(bool *source=nullptr)
+			: Source(source) { }
+
+		uint16_t Latch = 0xFFFF;
+		uint16_t Counter = 0;
+		uint8_t Control = 0;
+		uint8_t Delay = 0, Feed = 0;
+		bool Out = false;
+		bool *Source;
+
+		void setLo(uint8_t data)
+		{
+			Latch = (Latch & 0xFF00) | data;
 		}
+
+		void setHi(uint8_t data)
+		{
+			Latch = (Latch & 0x00FF) | (data << 8);
+			// Load counter if timer is stopped
+			if (!(Control & START)) {
+				Delay |= Load0;
+			}
+		}
+
+		void writeControl(uint8_t data)
+		{
+			// Start/stop timer
+			if (data & START && (Source == nullptr || !(data & INMODEB))) {
+				Delay |= Count1 | Count0;
+				Feed |= Count0;
+			}
+			else {
+				Delay &= ~(Count1 | Count0);
+				Feed &= ~Count0;
+			}
+
+			// Set/clear one shot mode
+			if (data & ONESHOT) {
+				Feed |= OneShot0;
+			}
+			else {
+				Feed &= ~OneShot0;
+			}
+
+			// Set force load
+			if (data & LOAD) {
+				Delay |= Load0;
+			}
+
+			Control = data;
+		}
+
+		void tick(MiniCIA &cia, const uint8_t icrbit)
+		{
+			// Assume no underflow
+			Out = false;
+
+			// If this is timer B in cascade mode, stick the output of timer A
+			// into our pipeline.
+			if (Source != nullptr && (Control & INMODEB) && *Source) {
+				Delay |= Count1;
+			}
+
+			// Decrement counter
+			if (Delay & Count3) {
+				Counter--;
+			}
+
+			// Check counter underflow
+			if (Counter == 0 && (Delay & Count2)) {
+				// Signal underflow
+				cia.IrqData |= icrbit;
+
+				// Underflow interrupt in next clock
+				if (cia.IrqMask & icrbit) {
+					cia.IrqDelay |= 1;
+				}
+
+				// Stop timer in one shot mode
+				if ((Delay | Feed) & OneShot0) {
+					Control &= ~START;
+					Delay &= ~(Count2 | Count1 | Count0);
+					Feed &= ~Count0;
+				}
+
+				// Signal underflow externally
+				Out = true;
+
+				// Reload counter
+				Delay |= Load1;
+			}
+
+			// Load counter
+			if (Delay & Load1) {
+				Counter = Latch;
+
+				// Don't decrement counter in next clock
+				Delay &= ~Count2;
+			}
+
+			// Advance pipeline for next clock
+			Delay = ((Delay << 1) & DelayMask) | Feed;
+		}
+	};
+
+	Timer TimerA, TimerB{ &TimerA.Out };
+
+	[[nodiscard]] uint8_t readIrqData()
+	{
+		uint8_t icr = IrqData | (Interrupt << 7);
+
+		// Clear interrupt and discard any pending
+		Interrupt = false;
+		IrqDelay = 0;
+
+		IrqData = 0;
+		return icr;
 	}
 
 	void writeIrqMask(uint8_t mask)
 	{
 		if (mask & 0x80) {
-			IrqMask |= mask & 0x03;
+			IrqMask |= mask & 0x1F;
 		}
 		else {
-			IrqMask &= ~(mask & 0x03);
+			IrqMask &= ~(mask & 0x1F);
 		}
-		if (IrqMask & 0x7F) {
-			IrqMask |= 0x80;
-		}
-		else {
-			IrqMask = 0;
-		}
-	}
-
-	void runTimerA() {
-		TimerAOut = false;
-		if (CRA & LOAD) {
-			TimerA = TimerALatch;
-			CRA &= ~LOAD;
-			return;
-		}
-		if (CRA & START) {
-			if (TimerA-- == 0) {
-				TimerA = TimerALatch;
-				TimerAOut = true;
-				IrqData |= 0x81;
-				if (CRA & ONESHOT) {
-					CRA &= ~START;
-				}
-			}
-		}
-	}
-
-	void runTimerB() {
-		if (CRB & LOAD) {
-			TimerB = TimerBLatch;
-			CRB &= ~LOAD;
-			return;
-		}
-		if (CRB & START) {
-			if ((!(CRB & INMODEB) || TimerAOut) && TimerB-- == 0) {
-				TimerB = TimerBLatch;
-				IrqData |= 0x82;
-				if (CRB & ONESHOT) {
-					CRB &= ~START;
-				}
-			}
+		// Raise an interrupt in the next cycle if condition matches
+		if ((IrqMask & IrqData) && !Interrupt) {
+			IrqDelay |= 1;
 		}
 	}
 };
+
+[[nodiscard]] uint16_t MiniCIA::getTimerA() const
+{
+	return TimerA.Counter;
+}
+
+[[nodiscard]] uint16_t MiniCIA::getTimerB() const
+{
+	return TimerB.Counter;
+}
+
+[[nodiscard]] uint8_t MiniCIA::getTimerADelay() const
+{
+	return TimerA.Delay;
+}
+
+[[nodiscard]] uint8_t MiniCIA::getTimerBDelay() const
+{
+	return TimerB.Delay;
+}
+
+[[nodiscard]] uint8_t MiniCIA::getICR() const
+{
+	return IrqData | (Interrupt << 7);
+}
+
 
 struct MiniC64Bus {
 	constexpr static inline int TRAP = 2;
@@ -301,6 +409,11 @@ struct MiniC64Bus {
 	void writeWord(uint16_t addr, uint16_t data);
 	uint8_t readAddr(uint16_t addr);
 	void writeAddr(uint16_t addr, uint8_t data);
+
+	[[nodiscard]] uint8_t readNoSideEffects(uint16_t addr) const
+	{
+		return memory[addr];
+	}
 
 	[[nodiscard]] bool getIRQB() const
 	{
@@ -580,6 +693,7 @@ void MiniC64Bus::writeWord(uint16_t addr, uint16_t data)
 
 uint8_t MiniC64Bus::readAddr(uint16_t addr)
 {
+	//printf("Read %04x, CIA1 ICR=%02x\n", addr, CIA1.getICR());
 	if (addr == SCROLY) {
 		// Always say we're inside the border
 		return 0x80;
@@ -744,10 +858,18 @@ void run_lorenz_tests()
 			cpu.tick();
 			bus.tick();
 			if (false && cpu.getSync()) {
-				printf("A=%02X X=%02X Y=%02X S=%02X",
+				printf("A=%02X X=%02X Y=%02X S=%02X ",
 					cpu.getA(), cpu.getX(), cpu.getY(), cpu.getSP());
 				print_p(cpu.getP());
-				printf(" T1A=%-5u %s\n", bus.CIA1.getTimerA(),
+				printf(" T=[{%02x}%-5u {%02x}%-5u {%02x}%-5u {%02x}%-5u] %s\n",
+					bus.CIA1.getTimerADelay(),
+					bus.CIA1.getTimerA(),
+					bus.CIA1.getTimerBDelay(),
+					bus.CIA1.getTimerB(),
+					bus.CIA2.getTimerADelay(),
+					bus.CIA2.getTimerA(),
+					bus.CIA2.getTimerBDelay(),
+					bus.CIA2.getTimerB(),
 					cpu.disasmOp(cpu.getPC() - 1, true).c_str());
 			}
 		}
