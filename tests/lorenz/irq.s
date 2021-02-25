@@ -14,7 +14,7 @@ thisname                        ; name of this test
            .null "irq (old cia)"
 .endif
            .byte 0
-nextname   .null "irq"          ; name of next test, "-" means no more tests
+nextname   .null "nmi"          ; name of next test, "-" means no more tests
 ;------------------------------------------------------------------------------           
 
 DEBUG = 0
