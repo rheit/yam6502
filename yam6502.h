@@ -38,6 +38,10 @@ namespace m65xx {
 	concept HasBreakHandler = requires (T bus, U &cpu, uint16_t addr) {
 		{ bus->breakHandler(cpu, addr) } -> std::convertible_to<bool>;
 	};
+	template<typename T>
+	concept HasReadNoSideEffects = requires (T bus, uint16_t addr) {
+		{ bus->readNoSideEffects(addr) } -> std::convertible_to<uint8_t>;
+	};
 
 	/*
 	template<typename T>
@@ -111,7 +115,7 @@ namespace m65xx {
 			// I wanted to play with std::format, but it doesn't exist
 			// in the standard library yet, so back to the C library I go.
 			char buffer[48];
-			uint8_t opbyte[4] = { Bus->readAddr(addr) };
+			uint8_t opbyte[4] = { readNoSideEffectsIfPossible(addr) };
 			const auto &base = Opc6502[opbyte[0]];
 			const auto &info = ModeTable[static_cast<int>(base.Mode)];
 			unsigned operand = 0;
@@ -121,9 +125,9 @@ namespace m65xx {
 
 			// Get operand bytes
 			if (info.OperandBytes >= 1) {
-				operand = opbyte[1] = Bus->readAddr(addr + 1);
+				operand = opbyte[1] = readNoSideEffectsIfPossible(addr + 1);
 				if (info.OperandBytes > 1) {
-					opbyte[2] = Bus->readAddr(addr + 2);
+					opbyte[2] = readNoSideEffectsIfPossible(addr + 2);
 					operand |= opbyte[2] << 8;
 				}
 			}
@@ -268,6 +272,15 @@ namespace m65xx {
 			}
 			else {
 				return true;
+			}
+		}
+		[[nodiscard]] uint8_t readNoSideEffectsIfPossible(uint16_t addr)
+		{
+			if constexpr (HasReadNoSideEffects<T>) {
+				return Bus->readNoSideEffects(addr);
+			}
+			else {
+				return Bus->readAddr(addr);
 			}
 		}
 
