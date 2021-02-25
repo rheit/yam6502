@@ -391,6 +391,7 @@ struct MiniC64Bus {
 	double fp_accum = 0;
 	double fp_arg = 0;
 	bool DontTrapBreak = false;
+	std::string out_line;
 
 	enum class State {
 		Running,
@@ -402,6 +403,7 @@ struct MiniC64Bus {
 	void init(cputype &cpu);
 	void startTest(cputype &cpu, uint16_t loadaddr);
 	int loadTest(std::string_view testname, bool reloc, uint16_t loadaddr);
+	void charOut(uint8_t pet);
 	static std::string pet2ascii(uint8_t pet);
 	bool breakHandler(cputype &cpu, uint16_t addr);
 	bool trap(cputype &cpu, uint16_t addr);
@@ -433,6 +435,8 @@ void MiniC64Bus::tick()
 
 void MiniC64Bus::init(cputype &cpu)
 {
+	out_line = "";
+
 	memory[DONEADDR] = TRAP;
 
 	memory[VEC_SETNAM] = 0x4C;	// JMP
@@ -584,6 +588,17 @@ bool MiniC64Bus::breakHandler(cputype &cpu, uint16_t addr)
 	return false;
 }
 
+void MiniC64Bus::charOut(uint8_t pet)
+{
+	// Accumulate characters in out_line, and output it when we
+	// get an end of line char
+	out_line += pet2ascii(pet);
+	if (pet == 13) {
+		std::cout << out_line;
+		out_line = "";
+	}
+}
+
 bool MiniC64Bus::trap(cputype &cpu, uint16_t addr)
 {
 	switch (addr) {
@@ -609,7 +624,7 @@ bool MiniC64Bus::trap(cputype &cpu, uint16_t addr)
 	}
 
 	case VEC_CHROUT:
-		std::cout << pet2ascii(cpu.getA());
+		charOut(cpu.getA());
 		return true;
 
 	// Various BASIC routines cputiming uses to print a 32-bit number
@@ -664,17 +679,23 @@ bool MiniC64Bus::trap(cputype &cpu, uint16_t addr)
 		return true;
 
 	case FOUT:
-		snprintf(reinterpret_cast<char *>(&memory[0x100]), 32, "% g", fp_accum);
+		snprintf(reinterpret_cast<char *>(&memory[0x100]), 32, "% .f", fp_accum);
 		cpu.setY(1);
 		cpu.setA(0);
 		return true;
 
-	case STROUT:
-		printf("%s", &memory[(cpu.getY() << 8) | cpu.getA()]);
-		return true;
-
 	case LINPRNT:
-		printf("%u", (cpu.getA() << 8) | cpu.getX());
+		snprintf(reinterpret_cast<char *>(&memory[0x100]), 32, "%u", (cpu.getA() << 8) | cpu.getX());
+		cpu.setY(1);
+		cpu.setA(0);
+		[[fallthrough]];
+
+	case STROUT:
+		if (!out_line.empty()) {
+			std::cout << out_line;
+			out_line = "";
+		}
+		std::cout << reinterpret_cast<char *>(&memory[(cpu.getY() << 8) | cpu.getA()]);
 		return true;
 	}
 	return false;
@@ -693,7 +714,9 @@ void MiniC64Bus::writeWord(uint16_t addr, uint16_t data)
 
 uint8_t MiniC64Bus::readAddr(uint16_t addr)
 {
-	//printf("Read %04x, CIA1 ICR=%02x\n", addr, CIA1.getICR());
+	auto irqb = getIRQB();
+	auto icr1 = CIA1.getICR();
+	//printf("Read %04x, IRQB=%d CIA1 ICR=%02x\n", addr, irqb, icr1);
 	if (addr == SCROLY) {
 		// Always say we're inside the border
 		return 0x80;
@@ -858,19 +881,24 @@ void run_lorenz_tests()
 			cpu.tick();
 			bus.tick();
 			if (false && cpu.getSync()) {
-				printf("A=%02X X=%02X Y=%02X S=%02X ",
-					cpu.getA(), cpu.getX(), cpu.getY(), cpu.getSP());
-				print_p(cpu.getP());
-				printf(" T=[{%02x}%-5u {%02x}%-5u {%02x}%-5u {%02x}%-5u] %s\n",
-					bus.CIA1.getTimerADelay(),
-					bus.CIA1.getTimerA(),
-					bus.CIA1.getTimerBDelay(),
-					bus.CIA1.getTimerB(),
-					bus.CIA2.getTimerADelay(),
-					bus.CIA2.getTimerA(),
-					bus.CIA2.getTimerBDelay(),
-					bus.CIA2.getTimerB(),
-					cpu.disasmOp(cpu.getPC() - 1, true).c_str());
+				if (auto pc = cpu.getPC() - 1;
+					!(pc >= 0xa80 && pc < 0xa8f) // inside savestack
+					&& !(pc >= 0xa90 && pc < 0xaaf) // inside restorestack
+					) {
+					printf("A=%02X X=%02X Y=%02X S=%02X ",
+						cpu.getA(), cpu.getX(), cpu.getY(), cpu.getSP());
+					print_p(cpu.getP());
+					printf(" T=[{%02x}%-5u {%02x}%-5u {%02x}%-5u {%02x}%-5u] %s\n",
+						bus.CIA1.getTimerADelay(),
+						bus.CIA1.getTimerA(),
+						bus.CIA1.getTimerBDelay(),
+						bus.CIA1.getTimerB(),
+						bus.CIA2.getTimerADelay(),
+						bus.CIA2.getTimerA(),
+						bus.CIA2.getTimerBDelay(),
+						bus.CIA2.getTimerB(),
+						cpu.disasmOp(pc, true).c_str());
+				}
 			}
 		}
 		if (bus.state == MiniC64Bus::State::Failed) {
