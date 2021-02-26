@@ -66,6 +66,19 @@ namespace m65xx {
 		M6502 &operator=(const M6502 &) = default;
 		M6502 &operator=(M6502 &&) = default;
 
+		// Set to true to emulate these related BRK/NMI bugs:
+		//
+		// 1. When an NMI is signalled during the beginning of a BRK sequence, the
+		//    NMI vector will be used instead of the IRQ/BRK vector.
+		// 2. An NMI that goes low during the vector read and goes high before the
+		//    final BRK cycle will be "lost".
+		//
+		// As these are unlikely to be useful behaviors except for 100% accurate
+		// emulation, this defaults to off.
+		//
+		// This class will not change this flag.
+		bool EmulateNMIBRKBug = false;
+
 		// Getters
 		[[nodiscard]] constexpr uint8_t getA() const { return A; }
 		[[nodiscard]] constexpr uint8_t getX() const { return X; }
@@ -353,11 +366,12 @@ namespace m65xx {
 
 			// NMI triggers when the NMIB line goes from high to low. Unlike IRQB,
 			// it does not need to still be low when T0 is reached to be serviced.
+			//
 			// However, if NMIB is low only during the two cycles when BRK fetches
 			// the vector address, then the NMI will be "lost" because the
 			// processor explicitly blocks reading of the NMIB line during these
-			// cycles to avoid a mixed vector read for both IRQ and NMI (not
-			// emulated).
+			// cycles to avoid a mixed vector read for both IRQ and NMI (optionally
+			// emulated via the EmulateNMIBRKBug flag).
 			NmiMemory = (NmiMemory << 1) | static_cast<decltype(NmiMemory)>(checkNMIB());
 
 			// If NMI was high 2 cycles ago but low in the previous cycle, the next
@@ -1034,6 +1048,15 @@ namespace m65xx {
 			} else {
 				Bus->readAddr(addr);
 			}
+
+			if (EmulateNMIBRKBug) {
+				if (NmiPending) {
+					// Force servicing of the NMI, even if this was a BRK.
+					BaseOp = op::NMI;
+				}
+				// Copy bit 1 to bit 0 to prevent NMI detection during vector fetch
+				NmiMemory = (NmiMemory & ~1) | ((NmiMemory >> 1) & 1);
+			}
 			return &type::execBreak_T6;
 		}
 		ExecPtrRet execBreak_T6()		// Fetch low order byte of interrupt vector
@@ -1041,6 +1064,11 @@ namespace m65xx {
 			InterruptGen = false;
 			P.setI(true);
 			TempAddr = Bus->readAddr(opToVector(BaseOp));
+
+			if (EmulateNMIBRKBug) {
+				// Copy bit 1 to bit 0 to prevent NMI detection during vector fetch
+				NmiMemory = (NmiMemory & ~1) | ((NmiMemory >> 1) & 1);
+			}
 			return &type::execBreak_T0;
 		}
 		ExecPtrRet execBreak_T0()		// Fetch high order byte of interrupt vector
