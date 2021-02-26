@@ -92,8 +92,8 @@ namespace m65xx {
 			BaseOp = op::RESET;
 			State = &M6502<T>::execBreak_T2;
 			NextIrqPending = IrqPending = false;
-			NextNmiPending = NmiPending = false;
-			LastNMIB = checkNMIB();
+			NmiPending = false;
+			NmiMemory = checkNMIB() ? ~0 : 0;
 			InterruptGen = false;
 		}
 
@@ -233,8 +233,7 @@ namespace m65xx {
 		bool IrqPending = false;
 		bool NextIrqPending = false;
 		bool NmiPending = false;
-		bool NextNmiPending = false;
-		bool LastNMIB = true;
+		uint8_t NmiMemory = ~0;
 		bool InterruptGen = false;
 
 		// Helper functions to access optional pins on the bus
@@ -359,15 +358,11 @@ namespace m65xx {
 			// processor explicitly blocks reading of the NMIB line during these
 			// cycles to avoid a mixed vector read for both IRQ and NMI (not
 			// emulated).
-			bool nmib = checkNMIB();
-			if (!NextNmiPending && LastNMIB && !nmib) {
-				NextNmiPending = true;
-			}
-			else if (NextNmiPending) {
-				NmiPending = true;
-				NextNmiPending = false;
-			}
-			LastNMIB = nmib;
+			NmiMemory = (NmiMemory << 1) | static_cast<decltype(NmiMemory)>(checkNMIB());
+
+			// If NMI was high 2 cycles ago but low in the previous cycle, the next
+			// call to intCheckT0() should trigger an NMI.
+			NmiPending |= ((NmiMemory & 6) == 4);
 		}
 
 		// For all T0 and also T2 of branches, check if the next instruction fetch
