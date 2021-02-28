@@ -154,6 +154,16 @@ public:
 		IrqDelay <<= 1;
 	}
 
+	void reset()
+	{
+		TimerA.reset();
+		TimerB.reset();
+		IrqData = 0;
+		IrqMask = 0x81;
+		IrqDelay = 0;
+		Interrupt = false;
+	}
+
 	[[nodiscard]] uint16_t getTimerA() const;
 	[[nodiscard]] uint16_t getTimerB() const;
 	[[nodiscard]] uint8_t getTimerADelay() const;
@@ -179,7 +189,7 @@ private:
 	static constexpr inline uint8_t Load0     =   0x10;
 	static constexpr inline uint8_t Load1     =   0x20;
 	static constexpr inline uint8_t OneShot0  =   0x40;
-	static constexpr inline uint8_t DelayMask = ~(0x80 | Count0 | Load0 | OneShot0);
+	static constexpr inline uint8_t DelayMask = ~(Count0 | Load0 | OneShot0);
 
 	struct Timer
 	{
@@ -192,6 +202,15 @@ private:
 		uint8_t Delay = 0, Feed = 0;
 		bool Out = false;
 		bool *Source;
+
+		void reset()
+		{
+			Latch = 0xFFFF;
+			Counter = 0;
+			Control = 0;
+			Delay = Feed = 0;
+			Out = false;
+		}
 
 		void setLo(uint8_t data)
 		{
@@ -355,9 +374,7 @@ struct MiniC64Bus {
 
 	constexpr static inline uint16_t CBINV = 0x0316;	// BRK interrupt vector
 
-	constexpr static inline uint16_t DONEADDR = 0x8000;	// Tests jump here when done
-	//constexpr static inline uint16_t WARMVEC = 0xA002;	// BASIC warm start vector
-	//constexpr static inline uint16_t READY = 0xA474;	// Enter BASIC immediate mode
+	constexpr static inline uint16_t READY = 0xA474;	// Enter BASIC immediate mode
 
 	constexpr static inline uint16_t STROUT = 0xAB1E;	// Print 0-terminated string at (Y,A)
 	constexpr static inline uint16_t FLOATC = 0xBC49;	// Float unsigned value in FAC+1,2
@@ -372,6 +389,7 @@ struct MiniC64Bus {
 	constexpr static inline uint16_t CIA2CRA = 0xDD0E;	// CIA 2 control register A
 	constexpr static inline uint16_t CIA2CRB = 0xDD0F;	// CIA 2 control register B
 
+	constexpr static inline uint16_t TIMB = 0xFE66;		// BRK handler
 	constexpr static inline uint16_t PULS = 0xFF48;		// IRQ handler
 	constexpr static inline uint16_t SETNAM = 0xFDF9;	// Set filename parameters
 
@@ -391,7 +409,6 @@ struct MiniC64Bus {
 	double fp_accum = 0;
 	double fp_arg = 0;
 	bool DontTrapBreak = false;
-	std::string out_line;
 
 	enum class State {
 		Running,
@@ -435,21 +452,21 @@ void MiniC64Bus::tick()
 
 void MiniC64Bus::init(cputype &cpu)
 {
-	out_line = "";
+	CIA1.reset();
+	CIA2.reset();
 
-	memory[DONEADDR] = TRAP;
-
-	memory[VEC_SETNAM] = 0x4C;	// JMP
-	writeWord(VEC_SETNAM + 1, SETNAM);
-
-	memory[VEC_IOINIT] = 0x60;		// RTS because not relevant here
-
+	// Set traps for several ROM routines
 	for (auto traploc :
-		{ VEC_RESTOR, VEC_LOAD, VEC_CHROUT,
+		{ TIMB, READY, VEC_RESTOR, VEC_LOAD, VEC_CHROUT,
 			FLOATC, FMULT, MOVAF, FADDT, FOUT, STROUT, LINPRNT }) {
 		memory[traploc] = TRAP;
 		memory[traploc + 1] = 0x60;	// RTS
 	}
+
+	memory[VEC_SETNAM] = 0x4C;		// JMP
+	writeWord(VEC_SETNAM + 1, SETNAM);
+
+	memory[VEC_IOINIT] = 0x60;		// RTS because not relevant here
 
 	// The secondary address, which indicates whether to relocate
 	// the load, is the only thing we care about for SETLFS.
@@ -457,9 +474,9 @@ void MiniC64Bus::init(cputype &cpu)
 	memory[VEC_SETLFS + 1] = SA;
 	memory[VEC_SETLFS + 2] = 0x60;	// RTS
 
-	// Make GETIN always return #3
-	memory[VEC_GETIN] = 0xA9;	// LDA #
-	memory[VEC_GETIN + 1] = 3;
+	// Make GETIN always return a space character
+	memory[VEC_GETIN] = 0xA9;		// LDA #
+	memory[VEC_GETIN + 1] = ' ';
 	memory[VEC_GETIN + 2] = 0x60;	// RTS
 
 	// Copy SETNAM routine
@@ -472,9 +489,8 @@ void MiniC64Bus::init(cputype &cpu)
 	std::copy(setnam, setnam + sizeof(setnam), &memory[SETNAM]);
 
 	// Setup vectors
-	//writeWord(WARMVEC, FAILADDR);
 	writeWord(cpu.opToVector(m65xx::op::IRQ), PULS);
-	writeWord(CBINV, DONEADDR);
+	writeWord(CBINV, TIMB);
 
 	// Copy IRQ handler
 	static const uint8_t puls[] = {
@@ -497,8 +513,8 @@ void MiniC64Bus::startTest(cputype &cpu, uint16_t loadaddr)
 {
 	init(cpu);
 
-	// Set up top of stack so RTS goes to DONEADDR
-	writeWord(0x1FE, DONEADDR - 1);
+	// Set up top of stack so RTS goes to READY
+	writeWord(0x1FE, READY - 1);
 	cpu.setSP(0x1FD);
 	cpu.setP(0);
 
@@ -523,7 +539,7 @@ int MiniC64Bus::loadTest(std::string_view testname, bool reloc, uint16_t loadadd
 	try {
 		std::filesystem::path path = "tests/bin/lorenz";
 		// Convert file name from PETSCII to ASCII. In practice, this
-		// amounts to converting from uppercase to uppercase.
+		// amounts to converting from uppercase to lowercase.
 		std::string name_ascii;
 		name_ascii.reserve(testname.size());
 		for (auto c : testname) {
@@ -578,7 +594,7 @@ std::string MiniC64Bus::pet2ascii(uint8_t pet)
 
 bool MiniC64Bus::breakHandler(cputype &cpu, uint16_t addr)
 {
-	if (!DontTrapBreak && addr >= DONEADDR) {
+	if (!DontTrapBreak && addr >= 0xA000) {
 		fprintf(stderr, "Unhandled routine at $%04X\n", addr);
 		fprintf(stderr, "Zero page dump:\n");
 		dump_mem(stderr, memory, 0, 256);
@@ -588,26 +604,15 @@ bool MiniC64Bus::breakHandler(cputype &cpu, uint16_t addr)
 	return false;
 }
 
-void MiniC64Bus::charOut(uint8_t pet)
-{
-	// Accumulate characters in out_line, and output it when we
-	// get an end of line char
-	out_line += pet2ascii(pet);
-	if (pet == 13) {
-		std::cout << out_line;
-		out_line = "";
-	}
-}
-
 bool MiniC64Bus::trap(cputype &cpu, uint16_t addr)
 {
 	switch (addr) {
-	//case READY: 
-//			state = State::Passed;
-//		return true;
-
-	case DONEADDR:
+	case TIMB:
 		state = State::Failed;
+		return true;
+
+	case READY:
+		state = State::Passed;
 		return true;
 
 	case VEC_RESTOR:
@@ -624,10 +629,10 @@ bool MiniC64Bus::trap(cputype &cpu, uint16_t addr)
 	}
 
 	case VEC_CHROUT:
-		charOut(cpu.getA());
+		std::cout << pet2ascii(cpu.getA());
 		return true;
 
-	// Various BASIC routines cputiming uses to print a 32-bit number
+	// Various BASIC routines used to print 16- and 32-bit decimal numbers
 	case FLOATC:
 		// FACHO[0] and FACHO[1] contain an unsigned 16-bit integer
 		// in big-endian order. X contains the MBF (Microsoft Binary
@@ -691,10 +696,6 @@ bool MiniC64Bus::trap(cputype &cpu, uint16_t addr)
 		[[fallthrough]];
 
 	case STROUT:
-		if (!out_line.empty()) {
-			std::cout << out_line;
-			out_line = "";
-		}
 		std::cout << reinterpret_cast<char *>(&memory[(cpu.getY() << 8) | cpu.getA()]);
 		return true;
 	}
@@ -714,11 +715,18 @@ void MiniC64Bus::writeWord(uint16_t addr, uint16_t data)
 
 uint8_t MiniC64Bus::readAddr(uint16_t addr)
 {
+#if 0
 	auto irqb = getIRQB();
+	auto nmib = getNMIB();
 	auto icr1 = CIA1.getICR();
-	//printf("Read %04x, IRQB=%d CIA1 ICR=%02x\n", addr, irqb, icr1);
+	auto icr2 = CIA2.getICR();
+	printf("Read %04x, IRQB=%d NMIB=%d ICR1=%02x ICR2=%02x", addr, irqb, nmib, icr1, icr2);
+	if (!nmib)
+		printf("*************************************************");
+	printf("\n");
+#endif
 	if (addr == SCROLY) {
-		// Always say we're inside the border
+		// Always say we're inside the border, since we're not emulating any VIC-II DMA
 		return 0x80;
 	}
 	if ((addr & 0xFF00) == 0xDC00) {
@@ -788,23 +796,19 @@ void run_functional_test()
 			bus.dump_mem(data_segment, data_bss_end);
 			[[maybe_unused]] int i = 0;	// Error!
 		}
-		if (false && cpu.getSync()) {
+#if 0
+		if (cpu.getSync()) {
 			printf("A=%02X X=%02X Y=%02X S=%02X ",
 				cpu.getA(), cpu.getX(), cpu.getY(), cpu.getSP());
 			print_p(cpu.getP());
 			printf("  %s\n", cpu.disasmOp(cpu.getPC() - 1, true).c_str());
 		}
+#endif
 	}
 }
 
 void run_interrupt_test()
 {
-	const uint16_t zero_page = 0;
-	const uint16_t zp_bss = 6;
-
-	const uint16_t data_segment = 0x200;
-	const uint16_t data_bss = 0x204;
-
 	const uint16_t code_segment = 0x400;
 
 	printf("Running interrupt tests\n");
@@ -821,6 +825,12 @@ void run_interrupt_test()
 	while (bus.last_addr != static_cast<uint16_t>(IO::Done)) {
 		cpu.tick();
 #if 0
+		const uint16_t zero_page = 0;
+		const uint16_t zp_bss = 6;
+
+		const uint16_t data_segment = 0x200;
+		const uint16_t data_bss = 0x204;
+
 		if (bus.last_addr == static_cast<uint16_t>(IO::ErrorTrap)) {
 			bus.dump_mem(zero_page, zp_bss);
 			bus.dump_mem(data_segment, data_bss);
@@ -875,15 +885,19 @@ void run_lorenz_tests()
 	printf("Running Wolfgang Lorenz's test suite\n");
 	MiniC64Bus bus;
 	MiniC64Bus::cputype cpu(&bus);
+	cpu.EmulateNMIBRKBug = true;
 	if (auto loadaddr = bus.loadTest("START", false, 0)) {
 		bus.startTest(cpu, loadaddr);
 		while (bus.state == MiniC64Bus::State::Running) {
 			cpu.tick();
 			bus.tick();
-			if (false && cpu.getSync()) {
+#if 0
+			if (cpu.getSync()) {
 				if (auto pc = cpu.getPC() - 1;
-					!(pc >= 0xa80 && pc < 0xa8f) // inside savestack
-					&& !(pc >= 0xa90 && pc < 0xaaf) // inside restorestack
+//					!(pc >= 0xa80 && pc < 0xa8f) // inside savestack (irq.prg)
+//					&& !(pc >= 0xa90 && pc < 0xaaf) // inside restorestack (irq.prg)
+					!(pc >= 0xa4b && pc < 0xa5a) // inside savestack (nmi.prg)
+					&& !(pc >= 0xa5b && pc < 0xa7a) // inside restorestack (nmi.prg)
 					) {
 					printf("A=%02X X=%02X Y=%02X S=%02X ",
 						cpu.getA(), cpu.getX(), cpu.getY(), cpu.getSP());
@@ -900,6 +914,7 @@ void run_lorenz_tests()
 						cpu.disasmOp(pc, true).c_str());
 				}
 			}
+#endif
 		}
 		if (bus.state == MiniC64Bus::State::Failed) {
 			std::cout << "  Failed\n";
@@ -907,6 +922,7 @@ void run_lorenz_tests()
 		else {
 			std::cout << "  Ok\n";
 		}
+		std::cout << "Exit code " << static_cast<int>(bus.memory[0xd7ff]) << '\n';
 	}
 }
 
