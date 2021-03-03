@@ -7,6 +7,8 @@
 #include <string_view>
 #include <filesystem>
 #include <algorithm>
+#include <chrono>
+#include <string>
 
 #include "yam6502.h"
 
@@ -405,6 +407,7 @@ struct MiniC64Bus {
 	double fp_accum = 0;
 	double fp_arg = 0;
 	bool DontTrapBreak = false;
+	unsigned long long clocks = 0;
 
 	enum class State {
 		Running,
@@ -444,6 +447,7 @@ void MiniC64Bus::tick()
 {
 	CIA1.tick();
 	CIA2.tick();
+	++clocks;
 }
 
 void MiniC64Bus::init(cputype &cpu)
@@ -785,7 +789,10 @@ void run_functional_test()
 	}
 	m65xx::M6502<TestBus *> cpu(&bus);
 	cpu.setPC(0x400);
+	unsigned long long clocks = 0;
+	auto start = std::chrono::steady_clock::now();
 	while (bus.last_addr != static_cast<uint16_t>(IO::Done)) {
+		clocks++;
 		cpu.tick();
 		if (bus.last_addr == static_cast<uint16_t>(IO::ErrorTrap)) {
 			bus.dump_mem(zero_page, zp_bss_end);
@@ -801,6 +808,9 @@ void run_functional_test()
 		}
 #endif
 	}
+	std::chrono::duration<double> diff = std::chrono::steady_clock::now() - start;
+	std::cout << clocks << " cycles in " << diff.count() << " sec ("
+		<< clocks / diff.count() / 1000000 << " MHz)\n";
 }
 
 void run_interrupt_test()
@@ -818,7 +828,10 @@ void run_interrupt_test()
 	}
 	m65xx::M6502<decltype(&bus)> cpu(&bus);
 	cpu.setPC(code_segment);
+	unsigned long long clocks = 0;
+	auto start = std::chrono::steady_clock::now();
 	while (bus.last_addr != static_cast<uint16_t>(IO::Done)) {
+		++clocks;
 		cpu.tick();
 #if 0
 		const uint16_t zero_page = 0;
@@ -840,6 +853,9 @@ void run_interrupt_test()
 		}
 #endif
 	}
+	std::chrono::duration<double> diff = std::chrono::steady_clock::now() - start;
+	std::cout << clocks << " cycles in " << diff.count() << " sec ("
+		<< clocks / diff.count() / 1000000 << " MHz)\n";
 }
 
 void run_decimal_test()
@@ -860,9 +876,15 @@ void run_decimal_test()
 	}
 	m65xx::M6502<TestBus *> cpu(&bus);
 	cpu.setPC(decimal_org);
+	unsigned long long clocks = 0;
+	auto start = std::chrono::steady_clock::now();
 	while (bus.last_addr != static_cast<uint16_t>(IO::Done)) {
+		++clocks;
 		cpu.tick();
 	}
+	std::chrono::duration<double> diff = std::chrono::steady_clock::now() - start;
+	std::cout << clocks << " cycles in " << diff.count() << " sec ("
+		<< clocks / diff.count() / 1000000 << " MHz)\n";
 	if (bus.memory[ERROR]) {
 		printf("ERROR for $%02X + $%02x + %d:\n", bus.memory[N1], bus.memory[N2], cpu.getY());
 		auto expect_p = bus.memory[NF] | bus.memory[VF] | bus.memory[ZF] | bus.memory[CF];
@@ -884,6 +906,7 @@ void run_lorenz_tests()
 	cpu.EmulateNMIBRKBug = true;
 	if (auto loadaddr = bus.loadTest("START", false, 0)) {
 		bus.startTest(cpu, loadaddr);
+		auto start = std::chrono::steady_clock::now();
 		while (bus.state == MiniC64Bus::State::Running) {
 			cpu.tick();
 			bus.tick();
@@ -912,6 +935,9 @@ void run_lorenz_tests()
 			}
 #endif
 		}
+		std::chrono::duration<double> diff = std::chrono::steady_clock::now() - start;
+		std::cout << bus.clocks << " cycles in " << diff.count() << " sec ("
+			<< bus.clocks / diff.count() / 1000000 << " MHz)\n";
 		if (bus.state == MiniC64Bus::State::Failed) {
 			std::cout << "  Failed\n";
 		}
