@@ -35,6 +35,10 @@ namespace m65xx {
 		{ bus->getRESB() } -> std::convertible_to<bool>;
 	};
 	template<typename T, typename U>
+	concept HasSyncHandler = requires (T bus, U & cpu, uint16_t addr) {
+		{ bus->syncHandler(cpu, addr) };
+	};
+	template<typename T, typename U>
 	concept HasBreakHandler = requires (T bus, U &cpu, uint16_t addr) {
 		{ bus->breakHandler(cpu, addr) } -> std::convertible_to<bool>;
 	};
@@ -86,7 +90,6 @@ namespace m65xx {
 		[[nodiscard]] constexpr uint16_t getSP() const { return 0x100 | SP; }
 		[[nodiscard]] constexpr uint16_t getPC() const { return PC; }
 		[[nodiscard]] constexpr uint8_t getP() const { return static_cast<uint8_t>(P); }
-		[[nodiscard]] constexpr bool getSync() const { return Sync; }
 
 		// Setters
 		void setA(uint8_t val) { A = val; }
@@ -107,16 +110,11 @@ namespace m65xx {
 			InterruptGen = false;
 		}
 
-		void tick(int cycles = 1)
+		void tick()
 		{
-			ExecPtr next = State;
-			while (cycles-- > 0) {
-				assert(next != nullptr);
-				Sync = false;
-				checkInterruptPins();
-				next = std::invoke(next, this);
-			}
-			State = next;
+			assert(State != nullptr);
+			checkInterruptPins();
+			State = std::invoke(State, this);
 		}
 
 		// Disassemble the opcode at addr
@@ -237,7 +235,6 @@ namespace m65xx {
 		uint16_t TempAddr = 0;
 		uint8_t TempData = 0;
 		StatusFlags P;
-		bool Sync = false;
 		bool IrqPending = false;
 		bool NextIrqPending = false;
 		bool NmiPending = false;
@@ -308,41 +305,48 @@ namespace m65xx {
 
 		[[nodiscard]] ExecPtrRet nextInstr()
 		{
-			Sync = true;
-			auto op = Bus->readAddr(PC);
 			if (InterruptGen) {
-				op = 0;
+				Bus->readAddr(PC);	// Dummy read of pre-injection opcode
 				BaseOp = NmiPending ? op::NMI : op::IRQ;
+				return ModeTable[static_cast<int>(am::brk)].Exec;
 			}
 			else {
-				++PC;
-			}
-			const BaseOpcode &base = Opc6502[op];
-			if (!InterruptGen) {
+				// The sync handler (if present) is passed this CPU instance and the
+				// address of the instruction about to be fetched.
+				if constexpr (HasSyncHandler<T, M6502>) {
+					Bus->syncHandler(*this, PC);
+				}
+
+				auto op = Bus->readAddr(PC++);
+				const BaseOpcode &base = Opc6502[op];
+				BaseOp = base.Op;
+
+				// Trap and break handlers (if present) are called when the
+				// opcode matches. For traps, this is defined at class instantiation
+				// time. For breaks, this is always 0 (the BRK opcode).
+				//
+				// Both handlers work the same way. They are passed the address of
+				// this CPU instance and the address of the opcode. (The actual PC
+				// is one past this address because the PC increment has already
+				// happened). The handler should return true if it handled the opcode
+				// or false to let the opcode execute normally.
+
 				if constexpr (trap_code >= 0) {
 					if (op == trap_code) {
-						// The trap handler is called with a reference to this
-						// CPU and the address of the trap opcode. PC points to
-						// the byte after the opcode. The handler should return
-						// true if it handled the opcode or false to let default
-						// handling continue.
 						if (Bus->trap(*this, PC - 1)) {
 							return &type::execFetch_T1;
 						}
 					}
 				}
 				if constexpr (HasBreakHandler<T, M6502>) {
-					// Semantics for the break handler are the same as for the
-					// trap handler.
 					if (op == 0) {
 						if (Bus->breakHandler(*this, PC - 1)) {
 							return &type::execFetch_T1;
 						}
 					}
 				}
-				BaseOp = base.Op;
+				return ModeTable[static_cast<int>(base.Mode)].Exec;
 			}
-			return ModeTable[static_cast<int>(base.Mode)].Exec;
 		}
 
 		// Check the interrupt pins and update state accordingly. For reference:

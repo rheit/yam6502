@@ -63,6 +63,19 @@ void dump_mem(FILE *out, const uint8_t *memory, uint16_t start, uint16_t end)
 	fputc('\n', out);
 }
 
+void print_p(unsigned p)
+{
+	printf("P=%02X [%c%c%c%c%c%c]",
+		p & 0xFF,
+		p & m65xx::FLAG_N ? 'N' : '.',
+		p & m65xx::FLAG_V ? 'V' : '.',
+		p & m65xx::FLAG_D ? 'D' : '.',
+		p & m65xx::FLAG_I ? 'I' : '.',
+		p & m65xx::FLAG_Z ? 'Z' : '.',
+		p & m65xx::FLAG_C ? 'C' : '.'
+	);
+}
+
 struct TestBus {
 	uint8_t readAddr(uint16_t addr)
 	{
@@ -85,6 +98,15 @@ struct TestBus {
 	{
 		::dump_mem(stdout, memory, start, end);
 	}
+#if 0
+	void syncHandler(m65xx::M6502<TestBus *> &cpu, uint16_t pc)
+	{
+		printf("A=%02X X=%02X Y=%02X S=%02X ",
+			cpu.getA(), cpu.getX(), cpu.getY(), cpu.getSP());
+		print_p(cpu.getP());
+		printf("  %s\n", cpu.disasmOp(pc, true).c_str());
+	}
+#endif
 	uint8_t memory[65536]{};
 	uint16_t last_addr = ~0;
 };
@@ -419,9 +441,9 @@ struct MiniC64Bus {
 	void init(cputype &cpu);
 	void startTest(cputype &cpu, uint16_t loadaddr);
 	int loadTest(std::string_view testname, bool reloc, uint16_t loadaddr);
-	void charOut(uint8_t pet);
 	static std::string pet2ascii(uint8_t pet);
 	bool breakHandler(cputype &cpu, uint16_t addr);
+	void syncHandler(cputype &cpu, uint16_t addr) const;
 	bool trap(cputype &cpu, uint16_t addr);
 	[[nodiscard]] uint16_t readWord(uint16_t addr) const;
 	void writeWord(uint16_t addr, uint16_t data);
@@ -592,7 +614,33 @@ std::string MiniC64Bus::pet2ascii(uint8_t pet)
 	return std::string(1, pet);
 }
 
-bool MiniC64Bus::breakHandler(cputype &cpu, uint16_t addr)
+void MiniC64Bus::syncHandler([[maybe_unused]] cputype &cpu, [[maybe_unused]] uint16_t pc) const
+{
+#if 0
+	if (
+		//	!(pc >= 0xa80 && pc < 0xa8f) // inside savestack (irq.prg)
+		//	&& !(pc >= 0xa90 && pc < 0xaaf) // inside restorestack (irq.prg)
+		!(pc >= 0xa4b && pc < 0xa5a) // inside savestack (nmi.prg)
+		&& !(pc >= 0xa5b && pc < 0xa7a) // inside restorestack (nmi.prg)
+	) {
+		printf("A=%02X X=%02X Y=%02X S=%02X ",
+			cpu.getA(), cpu.getX(), cpu.getY(), cpu.getSP());
+		print_p(cpu.getP());
+		printf(" T=[{%02x}%-5u {%02x}%-5u {%02x}%-5u {%02x}%-5u] %s\n",
+			CIA1.getTimerADelay(),
+			CIA1.getTimerA(),
+			CIA1.getTimerBDelay(),
+			CIA1.getTimerB(),
+			CIA2.getTimerADelay(),
+			CIA2.getTimerA(),
+			CIA2.getTimerBDelay(),
+			CIA2.getTimerB(),
+			cpu.disasmOp(pc, true).c_str());
+	}
+#endif
+}
+
+bool MiniC64Bus::breakHandler([[maybe_unused]] cputype &cpu, uint16_t addr)
 {
 	if (!DontTrapBreak && addr >= 0xA000) {
 		fprintf(stderr, "Unhandled routine at $%04X\n", addr);
@@ -757,19 +805,6 @@ void MiniC64Bus::writeAddr(uint16_t addr, uint8_t data)
 	}
 }
 
-void print_p(unsigned p)
-{
-	printf("P=%02X [%c%c%c%c%c%c]",
-		p & 0xFF,
-		p & m65xx::FLAG_N ? 'N' : '.',
-		p & m65xx::FLAG_V ? 'V' : '.',
-		p & m65xx::FLAG_D ? 'D' : '.',
-		p & m65xx::FLAG_I ? 'I' : '.',
-		p & m65xx::FLAG_Z ? 'Z' : '.',
-		p & m65xx::FLAG_C ? 'C' : '.'
-	);
-}
-
 void run_functional_test()
 {
 	const uint16_t zero_page = 0;
@@ -799,14 +834,6 @@ void run_functional_test()
 			bus.dump_mem(data_segment, data_bss_end);
 			[[maybe_unused]] int i = 0;	// Error!
 		}
-#if 0
-		if (cpu.getSync()) {
-			printf("A=%02X X=%02X Y=%02X S=%02X ",
-				cpu.getA(), cpu.getX(), cpu.getY(), cpu.getSP());
-			print_p(cpu.getP());
-			printf("  %s\n", cpu.disasmOp(cpu.getPC() - 1, true).c_str());
-		}
-#endif
 	}
 	std::chrono::duration<double> diff = std::chrono::steady_clock::now() - start;
 	std::cout << clocks << " cycles in " << diff.count() << " sec ("
@@ -844,12 +871,6 @@ void run_interrupt_test()
 			bus.dump_mem(zero_page, zp_bss);
 			bus.dump_mem(data_segment, data_bss);
 			[[maybe_unused]] int i = 0;	// Error!
-		}
-		if (1 && cpu.getSync()) {
-			printf("A=%02X X=%02X Y=%02X S=%02X ",
-				cpu.getA(), cpu.getX(), cpu.getY(), cpu.getSP());
-			print_p(cpu.getP());
-			printf("  %s\n", cpu.disasmOp(cpu.getPC() - 1, true).c_str());
 		}
 #endif
 	}
@@ -910,30 +931,6 @@ void run_lorenz_tests()
 		while (bus.state == MiniC64Bus::State::Running) {
 			cpu.tick();
 			bus.tick();
-#if 0
-			if (cpu.getSync()) {
-				if (auto pc = cpu.getPC() - 1;
-//					!(pc >= 0xa80 && pc < 0xa8f) // inside savestack (irq.prg)
-//					&& !(pc >= 0xa90 && pc < 0xaaf) // inside restorestack (irq.prg)
-					!(pc >= 0xa4b && pc < 0xa5a) // inside savestack (nmi.prg)
-					&& !(pc >= 0xa5b && pc < 0xa7a) // inside restorestack (nmi.prg)
-					) {
-					printf("A=%02X X=%02X Y=%02X S=%02X ",
-						cpu.getA(), cpu.getX(), cpu.getY(), cpu.getSP());
-					print_p(cpu.getP());
-					printf(" T=[{%02x}%-5u {%02x}%-5u {%02x}%-5u {%02x}%-5u] %s\n",
-						bus.CIA1.getTimerADelay(),
-						bus.CIA1.getTimerA(),
-						bus.CIA1.getTimerBDelay(),
-						bus.CIA1.getTimerB(),
-						bus.CIA2.getTimerADelay(),
-						bus.CIA2.getTimerA(),
-						bus.CIA2.getTimerBDelay(),
-						bus.CIA2.getTimerB(),
-						cpu.disasmOp(pc, true).c_str());
-				}
-			}
-#endif
 		}
 		std::chrono::duration<double> diff = std::chrono::steady_clock::now() - start;
 		std::cout << bus.clocks << " cycles in " << diff.count() << " sec ("
