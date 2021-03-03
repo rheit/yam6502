@@ -143,7 +143,12 @@ public:
 
 	void tick()
 	{
-		TimerA.tick(*this, 1);
+		bool a_out = TimerA.tick(*this, 1);
+		// If timer B in cascade mode, stick the output of timer A
+		// into its pipeline.
+		if (a_out && (TimerB.Control & INMODEB)) {
+			TimerB.Delay |= Count1;
+		}
 		TimerB.tick(*this, 2);
 
 		// Set interrupt line
@@ -193,15 +198,10 @@ private:
 
 	struct Timer
 	{
-		Timer(bool *source=nullptr)
-			: Source(source) { }
-
 		uint16_t Latch = 0xFFFF;
 		uint16_t Counter = 0;
 		uint8_t Control = 0;
 		uint8_t Delay = 0, Feed = 0;
-		bool Out = false;
-		bool *Source;
 
 		void reset()
 		{
@@ -209,7 +209,6 @@ private:
 			Counter = 0;
 			Control = 0;
 			Delay = Feed = 0;
-			Out = false;
 		}
 
 		void setLo(uint8_t data)
@@ -229,7 +228,7 @@ private:
 		void writeControl(uint8_t data)
 		{
 			// Start/stop timer
-			if (data & START && (Source == nullptr || !(data & INMODEB))) {
+			if (data & START && !(data & INMODEB)) {
 				Delay |= Count1 | Count0;
 				Feed |= Count0;
 			}
@@ -254,60 +253,57 @@ private:
 			Control = data;
 		}
 
-		void tick(MiniCIA &cia, const uint8_t icrbit)
+		bool tick(MiniCIA &cia, const uint8_t icrbit)
 		{
 			// Assume no underflow
-			Out = false;
+			bool out = false;
 
-			// If this is timer B in cascade mode, stick the output of timer A
-			// into our pipeline.
-			if (Source != nullptr && (Control & INMODEB) && *Source) {
-				Delay |= Count1;
-			}
-
-			// Decrement counter
-			if (Delay & Count3) {
-				Counter--;
-			}
-
-			// Check counter underflow
-			if (Counter == 0 && (Delay & Count2)) {
-				// Signal underflow
-				cia.IrqData |= icrbit;
-
-				// Underflow interrupt in next clock
-				if (cia.IrqMask & icrbit) {
-					cia.IrqDelay |= 1;
+			if (Delay) {
+				// Decrement counter
+				if (Delay & Count3) {
+					Counter--;
 				}
 
-				// Stop timer in one shot mode
-				if ((Delay | Feed) & OneShot0) {
-					Control &= ~START;
-					Delay &= ~(Count2 | Count1 | Count0);
-					Feed &= ~Count0;
+				// Check counter underflow
+				if (Counter == 0 && (Delay & Count2)) {
+					// Signal underflow
+					cia.IrqData |= icrbit;
+
+					// Underflow interrupt in next clock
+					if (cia.IrqMask & icrbit) {
+						cia.IrqDelay |= 1;
+					}
+
+					// Stop timer in one shot mode
+					if ((Delay | Feed) & OneShot0) {
+						Control &= ~START;
+						Delay &= ~(Count2 | Count1 | Count0);
+						Feed &= ~Count0;
+					}
+
+					// Signal underflow externally
+					out = true;
+
+					// Reload counter
+					Delay |= Load1;
 				}
 
-				// Signal underflow externally
-				Out = true;
+				// Load counter
+				if (Delay & Load1) {
+					Counter = Latch;
 
-				// Reload counter
-				Delay |= Load1;
+					// Don't decrement counter in next clock
+					Delay &= ~Count2;
+				}
 			}
-
-			// Load counter
-			if (Delay & Load1) {
-				Counter = Latch;
-
-				// Don't decrement counter in next clock
-				Delay &= ~Count2;
-			}
-
 			// Advance pipeline for next clock
 			Delay = ((Delay << 1) & DelayMask) | Feed;
+
+			return out;
 		}
 	};
 
-	Timer TimerA, TimerB{ &TimerA.Out };
+	Timer TimerA, TimerB;
 
 	[[nodiscard]] uint8_t readIrqData()
 	{
