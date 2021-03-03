@@ -86,7 +86,6 @@ namespace m65xx {
 		[[nodiscard]] constexpr uint16_t getSP() const { return 0x100 | SP; }
 		[[nodiscard]] constexpr uint16_t getPC() const { return PC; }
 		[[nodiscard]] constexpr uint8_t getP() const { return static_cast<uint8_t>(P); }
-		[[nodiscard]] constexpr uint8_t getIR() const { return IR; }
 		[[nodiscard]] constexpr bool getSync() const { return Sync; }
 
 		// Setters
@@ -100,8 +99,6 @@ namespace m65xx {
 		// Do something
 		void reset()
 		{
-			IR = static_cast<uint8_t>(op::BRK);
-			AddrMode = am::brk;
 			BaseOp = op::RESET;
 			State = &M6502<T>::execBreak_T2;
 			NextIrqPending = IrqPending = false;
@@ -156,7 +153,6 @@ namespace m65xx {
 				}
 			}
 			// Instruction neumonic
-			const char *opname = OpNames[base.Op];
 			buffpos += snprintf(buffer + buffpos, buffsize - buffpos, "%s", OpNames[base.Op]);
 
 			// Operand
@@ -240,7 +236,6 @@ namespace m65xx {
 		uint16_t PC = 0;
 		uint16_t TempAddr = 0;
 		uint8_t TempData = 0;
-		uint8_t IR = 0;
 		StatusFlags P;
 		bool Sync = false;
 		bool IrqPending = false;
@@ -309,7 +304,6 @@ namespace m65xx {
 		using ExecOpPtr = uint8_t (M6502::*)(uint8_t);
 
 		ExecPtr State = &type::execBreak_T2;
-		am AddrMode = am::brk;
 		op BaseOp = op::RESET;
 
 		[[nodiscard]] ExecPtrRet nextInstr()
@@ -323,9 +317,7 @@ namespace m65xx {
 			else {
 				++PC;
 			}
-			IR = op;
-			const BaseOpcode &base = Opc6502[IR];
-			AddrMode = base.Mode;
+			const BaseOpcode &base = Opc6502[op];
 			if (!InterruptGen) {
 				if constexpr (trap_code >= 0) {
 					if (op == trap_code) {
