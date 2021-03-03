@@ -298,7 +298,7 @@ namespace m65xx {
 			operator ExecPtr() { return p; }
 			ExecPtr p;
 		};
-		using ExecOpPtr = uint8_t (M6502::*)(uint8_t);
+		using DoOpPtr = uint8_t (M6502::*)(uint8_t);
 
 		ExecPtr State = &type::execBreak_T2;
 		op BaseOp = op::RESET;
@@ -410,7 +410,7 @@ namespace m65xx {
 		}
 		ExecPtrRet execAccumulator_T1()	// Perform operation + fetch next instruction
 		{
-			A = std::invoke(ExecOp[static_cast<int>(BaseOp)], this, A);
+			A = std::invoke(DoOp[static_cast<int>(BaseOp)], this, A);
 			return nextInstr();
 		}
 
@@ -428,7 +428,7 @@ namespace m65xx {
 		}
 		ExecPtrRet execCommon_T1()		// Perform operation + fetch next instruction
 		{
-			std::invoke(ExecOp[static_cast<int>(BaseOp)], this, TempData);
+			std::invoke(DoOp[static_cast<int>(BaseOp)], this, TempData);
 			return nextInstr();
 		}
 
@@ -575,7 +575,7 @@ namespace m65xx {
 		{
 			// AHX/SHX/SHY/TAS can potentially change the target address, so
 			// the operator must be invoked separately from the writeAddr call.
-			uint8_t output = std::invoke(ExecOp[static_cast<int>(BaseOp)], this, TempData);
+			uint8_t output = std::invoke(DoOp[static_cast<int>(BaseOp)], this, TempData);
 			Bus->writeAddr(TempAddr, output);
 			intCheckT0();
 			return &type::execFetch_T1;
@@ -865,7 +865,7 @@ namespace m65xx {
 		}
 		ExecPtrRet execPush_T0()		// Write register to stack
 		{
-			Bus->writeAddr(STACK_PAGE | SP, std::invoke(ExecOp[static_cast<int>(BaseOp)], this, 0));
+			Bus->writeAddr(STACK_PAGE | SP, std::invoke(DoOp[static_cast<int>(BaseOp)], this, 0));
 			--SP;
 			intCheckT0();
 			return &type::execFetch_T1;
@@ -1116,7 +1116,7 @@ namespace m65xx {
 		}
 		ExecPtrRet execBranch_T3()	// Check condition
 		{
-			if (!std::invoke(ExecOp[static_cast<int>(BaseOp)], this, 0)) {
+			if (!std::invoke(DoOp[static_cast<int>(BaseOp)], this, 0)) {
 				// No branch, so do next instruction
 				return nextInstr();
 			} else {
@@ -1182,42 +1182,68 @@ namespace m65xx {
 
 		/******************************* Operations *******************************/
 
-		uint8_t execBCC(uint8_t)
+		/* There are different classes of operations, but for the convenience of
+		 * being able to use a single table to hold them all, they all share the
+		 * same function signature:
+		 * 
+		 * 1. Retrieve some bit of internal data for the addressing mode to work
+		 *    with. These functions ignore their parameter but return a value.
+		 *    For instance, branch operations return the branch condition and
+		 *    store operations return the register contents.
+		 *
+		 * 2. Operations that modify some internal state based on memory data.
+		 *    These operations use their parameter, but their return value is
+		 *    ignored. For instance, math operators like ADC only use their
+		 *    parameter to modify the accumulator, so their return value is
+		 *    meaningless.
+		 * 
+		 * 3. Operations that implicitly perform some internal state change.
+		 *    Their parameter and return value are both ignored. This includes
+		 *    processor flag changing instructions like SEI or register transfer
+		 *    instructions like TXA.
+		 * 
+		 * 4. Operations that can modify either a memory location or the accumulator
+		 *    depending on their addressing mode. Their parameter is the original
+		 *    value and they return the modified value. This includes all the RMW
+		 *    instructions like DEC and ASL.
+		 */
+
+		uint8_t getBCC(uint8_t)
 		{
 			return !P.getC();
 		}
 
-		uint8_t execBCS(uint8_t)
+		uint8_t getBCS(uint8_t)
 		{
 			return P.getC();
 		}
 
-		uint8_t execBNE(uint8_t)
+		uint8_t getBNE(uint8_t)
 		{
 			return !P.getZ();
 		}
 
-		uint8_t execBEQ(uint8_t)
+		uint8_t getBEQ(uint8_t)
 		{
 			return P.getZ();
 		}
 
-		uint8_t execBPL(uint8_t)
+		uint8_t getBPL(uint8_t)
 		{
 			return !P.getN();
 		}
 
-		uint8_t execBMI(uint8_t)
+		uint8_t getBMI(uint8_t)
 		{
 			return P.getN();
 		}
 
-		uint8_t execBVC(uint8_t)
+		uint8_t getBVC(uint8_t)
 		{
 			return !P.getV();
 		}
 
-		uint8_t execBVS(uint8_t)
+		uint8_t getBVS(uint8_t)
 		{
 			return P.getV();
 		}
@@ -1239,7 +1265,7 @@ namespace m65xx {
 		// Algorithms for decimal mode addition/subtraction are described at
 		// http://www.6502.org/tutorials/decimal_mode.html
 
-		uint8_t execADC(uint8_t data)
+		uint8_t doADC(uint8_t data)
 		{
 			if (!P.getD()) {
 				// Regular binary addition
@@ -1269,7 +1295,7 @@ namespace m65xx {
 			return 0;
 		}
 
-		uint8_t execSBC(uint8_t data)
+		uint8_t doSBC(uint8_t data)
 		{
 			if (!P.getD()) {
 				// The 6502 implements binary subtraction by adding the 1's
@@ -1294,14 +1320,14 @@ namespace m65xx {
 			return 0;
 		}
 
-		uint8_t execAND(uint8_t data)
+		uint8_t doAND(uint8_t data)
 		{
 			A &= data;
 			P.setNZ(A);
 			return 0;
 		}
 
-		uint8_t execASL(uint8_t data)
+		uint8_t doASL(uint8_t data)
 		{
 			P.setC(!!(data & 0x80));
 			data <<= 1;
@@ -1309,7 +1335,7 @@ namespace m65xx {
 			return data;
 		}
 
-		uint8_t execBIT(uint8_t data)
+		uint8_t doBIT(uint8_t data)
 		{
 			P.setZ(!(A & data));
 			P.setN(data);
@@ -1317,25 +1343,25 @@ namespace m65xx {
 			return 0;
 		}
 
-		uint8_t execCLC(uint8_t)
+		uint8_t doCLC(uint8_t)
 		{
 			P.setC(false);
 			return 0;
 		}
 
-		uint8_t execCLD(uint8_t)
+		uint8_t doCLD(uint8_t)
 		{
 			P.setD(false);
 			return 0;
 		}
 
-		uint8_t execCLI(uint8_t)
+		uint8_t doCLI(uint8_t)
 		{
 			P.setI(false);
 			return 0;
 		}
 
-		uint8_t execCLV(uint8_t)
+		uint8_t doCLV(uint8_t)
 		{
 			P.setV(0);
 			return 0;
@@ -1349,90 +1375,90 @@ namespace m65xx {
 			return diff;	// Returned for AXS
 		}
 
-		uint8_t execCMP(uint8_t data)
+		uint8_t doCMP(uint8_t data)
 		{
 			doCompare(A, data);
 			return 0;
 		}
 
-		uint8_t execCPX(uint8_t data)
+		uint8_t doCPX(uint8_t data)
 		{
 			doCompare(X, data);
 			return 0;
 		}
 
-		uint8_t execCPY(uint8_t data)
+		uint8_t doCPY(uint8_t data)
 		{
 			doCompare(Y, data);
 			return 0;
 		}
 
-		uint8_t execDEC(uint8_t data)
+		uint8_t doDEC(uint8_t data)
 		{
 			P.setNZ(--data);
 			return data;
 		}
 
-		uint8_t execDEX(uint8_t)
+		uint8_t doDEX(uint8_t)
 		{
 			P.setNZ(--X);
 			return 0;
 		}
 
-		uint8_t execDEY(uint8_t)
+		uint8_t doDEY(uint8_t)
 		{
 			P.setNZ(--Y);
 			return 0;
 		}
 
-		uint8_t execEOR(uint8_t data)
+		uint8_t doEOR(uint8_t data)
 		{
 			A ^= data;
 			P.setNZ(A);
 			return 0;
 		}
 
-		uint8_t execINC(uint8_t data)
+		uint8_t doINC(uint8_t data)
 		{
 			data += 1;
 			P.setNZ(data);
 			return data;
 		}
 
-		uint8_t execINX(uint8_t)
+		uint8_t doINX(uint8_t)
 		{
 			P.setNZ(++X);
 			return 0;
 		}
 
-		uint8_t execINY(uint8_t)
+		uint8_t doINY(uint8_t)
 		{
 			P.setNZ(++Y);
 			return 0;
 		}
 
-		uint8_t execLDA(uint8_t data)
+		uint8_t doLDA(uint8_t data)
 		{
 			A = data;
 			P.setNZ(A);
 			return 0;
 		}
 
-		uint8_t execLDX(uint8_t data)
+		uint8_t doLDX(uint8_t data)
 		{
 			X = data;
 			P.setNZ(X);
 			return 0;
 		}
 
-		uint8_t execLDY(uint8_t data)
+		uint8_t doLDY(uint8_t data)
 		{
 			Y = data;
 			P.setNZ(Y);
 			return 0;
 		}
 
-		uint8_t execLSR(uint8_t data)
+		uint8_t doLSR(uint8_t data)
 		{
 			P.setC(bool(data & 1));
 			data >>= 1;
@@ -1441,42 +1467,42 @@ namespace m65xx {
 			return data;
 		}
 
-		uint8_t execNOP(uint8_t)
+		uint8_t doNOP(uint8_t)
 		{
 			return 0;
 		}
 
-		uint8_t execORA(uint8_t data)
+		uint8_t doORA(uint8_t data)
 		{
 			A |= data;
 			P.setNZ(A);
 			return 0;
 		}
 
-		uint8_t execPHA(uint8_t)
+		uint8_t doGetA(uint8_t)
 		{
 			return A;
 		}
 
-		uint8_t execPHP(uint8_t)
+		uint8_t doPHP(uint8_t)
 		{
 			return uint8_t(P);
 		}
 
-		uint8_t execPLA(uint8_t data)
+		uint8_t doPLA(uint8_t data)
 		{
 			A = data;
 			P.setNZ(A);
 			return 0;
 		}
 
-		uint8_t execPLP(uint8_t data)
+		uint8_t doPLP(uint8_t data)
 		{
 			P = data;
 			return 0;
 		}
 
-		uint8_t execROL(uint8_t data)
+		uint8_t doROL(uint8_t data)
 		{
 			uint8_t shift_in = P.getC();
 			P.setC(bool(data >> 7));
@@ -1485,7 +1511,7 @@ namespace m65xx {
 			return data;
 		}
 
-		uint8_t execROR(uint8_t data)
+		uint8_t doROR(uint8_t data)
 		{
 			uint8_t shift_in = P.getC() << 7;
 			P.setC(bool(data & 1));
@@ -1494,75 +1520,70 @@ namespace m65xx {
 			return data;
 		}
 
-		uint8_t execSEC(uint8_t)
+		uint8_t doSEC(uint8_t)
 		{
 			P.setC(true);
 			return 0;
 		}
 
-		uint8_t execSED(uint8_t)
+		uint8_t doSED(uint8_t)
 		{
 			P.setD(true);
 			return 0;
 		}
 
-		uint8_t execSEI(uint8_t)
+		uint8_t doSEI(uint8_t)
 		{
 			P.setI(true);
 			return 0;
 		}
 
-		uint8_t execSTA(uint8_t)
-		{
-			return A;
-		}
-
-		uint8_t execSTX(uint8_t)
+		uint8_t doGetX(uint8_t)
 		{
 			return X;
 		}
 
-		uint8_t execSTY(uint8_t)
+		uint8_t doGetY(uint8_t)
 		{
 			return Y;
 		}
 
-		uint8_t execTAX(uint8_t)
+		uint8_t doTAX(uint8_t)
 		{
 			X = A;
 			P.setNZ(X);
 			return 0;
 		}
 
-		uint8_t execTAY(uint8_t)
+		uint8_t doTAY(uint8_t)
 		{
 			Y = A;
 			P.setNZ(Y);
 			return 0;
 		}
 
-		uint8_t execTSX(uint8_t)
+		uint8_t doTSX(uint8_t)
 		{
 			X = SP;
 			P.setNZ(X);
 			return 0;
 		}
 
-		uint8_t execTXA(uint8_t)
+		uint8_t doTXA(uint8_t)
 		{
 			A = X;
 			P.setNZ(A);
 			return 0;
 		}
 
-		uint8_t execTXS(uint8_t)
+		uint8_t doTXS(uint8_t)
 		{
 			SP = X;
 			// Unlike TSX, does not modify condition codes
 			return 0;
 		}
 
-		uint8_t execTYA(uint8_t)
+		uint8_t doTYA(uint8_t)
 		{
 			A = Y;
 			P.setNZ(A);
@@ -1576,15 +1597,15 @@ namespace m65xx {
 
 		// ALR: AND + LSR
 		//   A = (A & #{imm}) / 2
-		uint8_t execALR(uint8_t data)
+		uint8_t doALR(uint8_t data)
 		{
-			A = execLSR(A & data);
+			A = doLSR(A & data);
 			return 0;
 		}
 
 		// ANC: AND + ASL/ROL
 		//   A = A & #{imm}
-		uint8_t execANC(uint8_t data)
+		uint8_t doANC(uint8_t data)
 		{
 			A &= data;
 			P.setNZ(A);
@@ -1594,7 +1615,7 @@ namespace m65xx {
 
 		// ARR: AND/ADC + ROR
 		//   A = (A & #{imm}) / 2
-		uint8_t execARR(uint8_t data)
+		uint8_t doARR(uint8_t data)
 		{
 			data &= A;
 			if (!P.getD()) {
@@ -1626,7 +1647,7 @@ namespace m65xx {
 
 		// AXS: CMP + DEX
 		//   X = A & X - #{imm}
-		uint8_t execAXS(uint8_t data)
+		uint8_t doAXS(uint8_t data)
 		{
 			auto diff = doCompare(A & X, data);
 			X = uint8_t(diff);
@@ -1635,7 +1656,7 @@ namespace m65xx {
 
 		// DCP: DEC + CMP
 		//   {addr} = {addr} - 1   A cmp {addr}
-		uint8_t execDCP(uint8_t data)
+		uint8_t doDCP(uint8_t data)
 		{
 			--data;
 			doCompare(A, data);
@@ -1644,21 +1665,16 @@ namespace m65xx {
 
 		// ISC: INC + SBC
 		//   {addr} = {addr} + 1   A = A - {addr}
-		uint8_t execISC(uint8_t data)
+		uint8_t doISC(uint8_t data)
 		{
 			++data;
-			execSBC(data);
+			doSBC(data);
 			return data;
-		}
-
-		uint8_t execKIL(uint8_t)
-		{
-			return 0;
 		}
 
 		// LAS: STA/TXS + LDA/TSX (maybe unstable?)
 		//   A,X,SP = {addr} & SP
-		uint8_t execLAS(uint8_t data)
+		uint8_t doLAS(uint8_t data)
 		{
 			A = X = SP = data &= SP;
 			P.setNZ(data);
@@ -1666,7 +1682,7 @@ namespace m65xx {
 		}
 
 		// LAX: LDA + LDX
-		uint8_t execLAX(uint8_t data)
+		uint8_t doLAX(uint8_t data)
 		{
 			A = data;
 			X = data;
@@ -1676,9 +1692,9 @@ namespace m65xx {
 
 		// RLA: ROL + AND
 		//   {addr} = rol {addr}   A = A and {addr}
-		uint8_t execRLA(uint8_t data)
+		uint8_t doRLA(uint8_t data)
 		{
-			data = execROL(data);
+			data = doROL(data);
 			A &= data;
 			P.setNZ(A);
 			return data;
@@ -1686,25 +1702,25 @@ namespace m65xx {
 
 		// RRA: ROR + ADC
 		//   {addr} = ror {addr}   A = A adc {addr}
-		uint8_t execRRA(uint8_t data)
+		uint8_t doRRA(uint8_t data)
 		{
-			data = execROR(data);
-			execADC(data);
+			data = doROR(data);
+			doADC(data);
 			return data;
 		}
 
 		// SAX: STA + STX
 		//   {addr} = A & X
-		uint8_t execSAX(uint8_t)
+		uint8_t doSAX(uint8_t)
 		{
 			return A & X;
 		}
 
 		// SLO: ASL + ORA
 		//   {addr} = {addr} * 2   A = A or {addr}
-		uint8_t execSLO(uint8_t data)
+		uint8_t doSLO(uint8_t data)
 		{
-			data = execASL(data);
+			data = doASL(data);
 			A |= data;
 			P.setNZ(A);
 			return data;
@@ -1712,9 +1728,9 @@ namespace m65xx {
 
 		// SRE: LSR + EOR
 		//   {addr} = {addr} / 2   A = A eor {addr}
-		uint8_t execSRE(uint8_t data)
+		uint8_t doSRE(uint8_t data)
 		{
-			data = execLSR(data);
+			data = doLSR(data);
 			A ^= data;
 			P.setNZ(A);
 			return data;
@@ -1743,28 +1759,28 @@ namespace m65xx {
 
 		// AHX: STA/STX/STY
 		//   {addr} = A & X & {H+1}
-		uint8_t execAHX(uint8_t prehi)
+		uint8_t doAHX(uint8_t prehi)
 		{
 			return doUnstableHi(A & X, prehi);
 		}
 
 		// SHX: STA/STX/STY
 		//   {addr} = X & {H+1}
-		uint8_t execSHX(uint8_t prehi)
+		uint8_t doSHX(uint8_t prehi)
 		{
 			return doUnstableHi(X, prehi);
 		}
 
 		// SHY: STA/STX/STY
 		//   {addr} = Y & {H+1}
-		uint8_t execSHY(uint8_t prehi)
+		uint8_t doSHY(uint8_t prehi)
 		{
 			return doUnstableHi(Y, prehi);
 		}
 
 		// TAS: STA/TXS , LDA/TSX
 		//   SP = A & X   {addr} = A & X & {H+1}
-		uint8_t execTAS(uint8_t prehi)
+		uint8_t doTAS(uint8_t prehi)
 		{
 			SP = A & X;
 			return doUnstableHi(SP, prehi);
@@ -1776,25 +1792,26 @@ namespace m65xx {
 		// modelled 100% accurately, but you can pick magic constants that wil
 		// work for the majority of cases.
 
-		enum { LAX_MAGIC = 0xEE };
+		static constexpr inline uint8_t LAX_MAGIC = 0xEE;
 
 		// LAX #imm: LDA + LDX + TAX
 		//   A,X = (A | {CONST}) & #{imm}
 		// LAX #imm is in this group because it wires up the Accumulator as input
 		// and output to the Special Bus at the same time, while the other versions
 		// of LAX do not.
-		uint8_t execLAX_IMM(uint8_t data)
+		uint8_t doLAX_IMM(uint8_t data)
 		{
 			X = A = (A | LAX_MAGIC) & data;
 			P.setNZ(A);
 			return 0;
 		}
 
-		enum { XAA_MAGIC = 0xEF, XAA_MAGIC_RDY = 0xEE };
+		static constexpr inline uint8_t XAA_MAGIC = 0xEF;
+		static constexpr inline uint8_t XAA_MAGIC_RDY = 0xEE;
 
 		// XAA
 		//   A = (A | {CONST}) & X & #imm
-		uint8_t execXAA(uint8_t data)
+		uint8_t doXAA(uint8_t data)
 		{
 			A = (A | (!checkRDY() ? XAA_MAGIC_RDY : XAA_MAGIC)) & X & data;
 			P.setNZ(A);
@@ -1900,85 +1917,85 @@ namespace m65xx {
 			{ 0, "" },			// Halt the processor
 		};
 
-		static inline const ExecOpPtr ExecOp[] = {
-			&type::execADC,
-			&type::execAND,
-			&type::execASL,
-			&type::execBCC,
-			&type::execBCS,
-			&type::execBEQ,
-			&type::execBIT,
-			&type::execBMI,
-			&type::execBNE,
-			&type::execBPL,
-			&type::execNOP,	// BRK
-			&type::execBVC,
-			&type::execBVS,
-			&type::execCLC,
-			&type::execCLD,
-			&type::execCLI,
-			&type::execCLV,
-			&type::execCMP,
-			&type::execCPX,
-			&type::execCPY,
-			&type::execDEC,
-			&type::execDEX,
-			&type::execDEY,
-			&type::execEOR,
-			&type::execINC,
-			&type::execINX,
-			&type::execINY,
-			&type::execNOP,	// JMP
-			&type::execNOP,	// JSR
-			&type::execLDA,
-			&type::execLDX,
-			&type::execLDY,
-			&type::execLSR,
-			&type::execNOP,
-			&type::execORA,
-			&type::execPHA,
-			&type::execPHP,
-			&type::execPLA,
-			&type::execPLP,
-			&type::execROL,
-			&type::execROR,
-			&type::execNOP,	// RTI
-			&type::execNOP,	// RTS
-			&type::execSBC,
-			&type::execSEC,
-			&type::execSED,
-			&type::execSEI,
-			&type::execSTA,
-			&type::execSTX,
-			&type::execSTY,
-			&type::execTAX,
-			&type::execTAY,
-			&type::execTSX,
-			&type::execTXA,
-			&type::execTXS,
-			&type::execTYA,
+		static inline const DoOpPtr DoOp[] = {
+			&type::doADC,
+			&type::doAND,
+			&type::doASL,
+			&type::getBCC,
+			&type::getBCS,
+			&type::getBEQ,
+			&type::doBIT,
+			&type::getBMI,
+			&type::getBNE,
+			&type::getBPL,
+			&type::doNOP,	// BRK
+			&type::getBVC,
+			&type::getBVS,
+			&type::doCLC,
+			&type::doCLD,
+			&type::doCLI,
+			&type::doCLV,
+			&type::doCMP,
+			&type::doCPX,
+			&type::doCPY,
+			&type::doDEC,
+			&type::doDEX,
+			&type::doDEY,
+			&type::doEOR,
+			&type::doINC,
+			&type::doINX,
+			&type::doINY,
+			&type::doNOP,	// JMP
+			&type::doNOP,	// JSR
+			&type::doLDA,
+			&type::doLDX,
+			&type::doLDY,
+			&type::doLSR,
+			&type::doNOP,
+			&type::doORA,
+			&type::doGetA,	// PHA
+			&type::doPHP,
+			&type::doPLA,
+			&type::doPLP,
+			&type::doROL,
+			&type::doROR,
+			&type::doNOP,	// RTI
+			&type::doNOP,	// RTS
+			&type::doSBC,
+			&type::doSEC,
+			&type::doSED,
+			&type::doSEI,
+			&type::doGetA,	// STA
+			&type::doGetX,	// STX
+			&type::doGetY,	// STY
+			&type::doTAX,
+			&type::doTAY,
+			&type::doTSX,
+			&type::doTXA,
+			&type::doTXS,
+			&type::doTYA,
 
 			// Illegal operations
-			&type::execAHX,
-			&type::execALR,
-			&type::execANC,
-			&type::execARR,
-			&type::execAXS,
-			&type::execDCP,
-			&type::execISC,
-			&type::execNOP,	// KIL
-			&type::execLAS,
-			&type::execLAX,
-			&type::execLAX_IMM,
-			&type::execRLA,
-			&type::execRRA,
-			&type::execSAX,
-			&type::execSHX,
-			&type::execSHY,
-			&type::execSLO,
-			&type::execSRE,
-			&type::execTAS,
-			&type::execXAA,
+			&type::doAHX,
+			&type::doALR,
+			&type::doANC,
+			&type::doARR,
+			&type::doAXS,
+			&type::doDCP,
+			&type::doISC,
+			&type::doNOP,	// KIL
+			&type::doLAS,
+			&type::doLAX,
+			&type::doLAX_IMM,
+			&type::doRLA,
+			&type::doRRA,
+			&type::doSAX,
+			&type::doSHX,
+			&type::doSHY,
+			&type::doSLO,
+			&type::doSRE,
+			&type::doTAS,
+			&type::doXAA,
 		};
 	};
 }
