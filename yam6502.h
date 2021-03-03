@@ -308,7 +308,7 @@ namespace m65xx {
 			if (InterruptGen) {
 				Bus->readAddr(PC);	// Dummy read of pre-injection opcode
 				BaseOp = NmiPending ? op::NMI : op::IRQ;
-				return ModeTable[static_cast<int>(am::brk)].Exec;
+				return ModeExec[static_cast<int>(am::brk)];
 			}
 			else {
 				// The sync handler (if present) is passed this CPU instance and the
@@ -345,7 +345,7 @@ namespace m65xx {
 						}
 					}
 				}
-				return ModeTable[static_cast<int>(base.Mode)].Exec;
+				return ModeExec[static_cast<int>(base.Mode)];
 			}
 		}
 
@@ -1803,57 +1803,103 @@ namespace m65xx {
 
 		/***************************** Opcode tables ******************************/
 
-		struct AddrModeInfo {
-			ExecPtr Exec;
+		static inline const ExecPtr ModeExec[] = {
+			&type::execImplicit_T02,	// implicit
+			&type::execAccumulator_T02,	// accumulator
+
+			&type::execImmediate_T02,	// #$00
+			&type::execZP_T2,			// $00
+			&type::execZPX_T2,			// $00,X
+			&type::execZPY_T2,			// $00,Y
+			&type::execIZPX_T2,			// ($00,X)
+			&type::execIZPY_T2,			// ($00),Y
+			&type::execAbs_T2,			// $0000
+			&type::execAbsX_T2,			// $0000,X
+			&type::execAbsY_T2,			// $0000,Y
+
+			// Internal execution on memory data
+			&type::execZP_Sto_T2,		// STx $00
+			&type::execAbs_Sto_T2,		// STx $0000
+			&type::execIZPX_Sto_T2,		// STx ($00,X)
+			&type::execAbsX_Sto_T2,		// STx $0000,X
+			&type::execAbsY_Sto_T2,		// STx $0000,Y
+			&type::execZPX_Sto_T2,		// STx $00,X
+			&type::execZPY_Sto_T2,		// STx $00,Y
+			&type::execIZPY_Sto_T2,		// STx ($00),Y
+
+			// Read-Modify-Write operations
+			&type::execZP_RMW_T2,		// RMW $00
+			&type::execAbs_RMW_T2,		// RMW $0000
+			&type::execZPX_RMW_T2,		// RMW $00,X
+			&type::execAbsX_RMW_T2,		// RMW $0000,X
+			&type::execAbsY_RMW_T2,		// RMW $0000,Y [illegal]
+			&type::execIZPX_RMW_T2,		// RMW ($00,X) [illegal]
+			&type::execIZPY_RMW_T2,		// RMW ($00),Y [illegal]
+
+			// Miscellaneous Operations
+			&type::execPush_T2,			// Push to stack
+			&type::execPull_T2,			// Pull from stack
+			&type::execJump_T2,			// JMP $0000
+			&type::execJumpInd_T2,		// JMP ($0000)
+			&type::execCall_T2,			// JSR $0000
+			&type::execRTS_T2,			// Return from Subroutine
+			&type::execBranch_T2,		// PC-relative
+			&type::execBreak_T2,		// BRK/IRQ/NMI/RESET sequence
+			&type::execRTI_T2,			// Return from Interrupt
+			&type::execHalt_T2,			// Halt the processor
+		};
+
+		struct DisasmInfo {
 			uint8_t OperandBytes;
 			const char Format[11];
 		};
 
-		static inline const AddrModeInfo ModeTable[] = {
-			{ &type::execImplicit_T02, 0, "" },	// implicit
-			{ &type::execAccumulator_T02, 0, "A" },	// accumulator
+		static inline const DisasmInfo ModeTable[] = {
+			{ 0, "" },			// implicit
+			{ 0, "A" },			// accumulator
 
-			{ &type::execImmediate_T02, 1, "#$%02X" },	// #$00
-			{ &type::execZP_T2, 1, "$%02X" },			// $00
-			{ &type::execZPX_T2, 1, "$%02X,X" },		// $00,X
-			{ &type::execZPY_T2, 1, "$%02X,Y" },		// $00,Y
-			{ &type::execIZPX_T2, 1, "($%02X,X)" },		// ($00,X)
-			{ &type::execIZPY_T2, 1, "($%02X),Y" },		// ($00),Y
-			{ &type::execAbs_T2, 2, "$%04X" },			// $0000
-			{ &type::execAbsX_T2, 2, "$%04X,X" },		// $0000,X
-			{ &type::execAbsY_T2, 2, "$%04X,Y" },		// $0000,Y
+			{ 1, "#$%02X" },	// #$00
+			{ 1, "$%02X" },		// $00
+			{ 1, "$%02X,X" },	// $00,X
+			{ 1, "$%02X,Y" },	// $00,Y
+			{ 1, "($%02X,X)" },	// ($00,X)
+			{ 1, "($%02X),Y" },	// ($00),Y
+			{ 2, "$%04X" },		// $0000
+			{ 2, "$%04X,X" },	// $0000,X
+			{ 2, "$%04X,Y" },	// $0000,Y
 
 			// Internal execution on memory data
-			{ &type::execZP_Sto_T2, 1, "$%02X" },		// STx $00
-			{ &type::execAbs_Sto_T2, 2, "$%04X" },		// STx $0000
-			{ &type::execIZPX_Sto_T2, 1, "($%02X,X)" },	// STx ($00,X)
-			{ &type::execAbsX_Sto_T2, 2, "$%04X,X" },	// STx $0000,X
-			{ &type::execAbsY_Sto_T2, 2, "$%04X,Y" },	// STx $0000,Y
-			{ &type::execZPX_Sto_T2, 1, "$%02X,X" },	// STx $00,X
-			{ &type::execZPY_Sto_T2, 1, "$%02X,Y" },	// STx $00,Y
-			{ &type::execIZPY_Sto_T2, 1, "($%02X),Y" },	// STx ($00),Y
+			{ 1, "$%02X" },		// STx $00
+			{ 2, "$%04X" },		// STx $0000
+			{ 1, "($%02X,X)" },	// STx ($00,X)
+			{ 2, "$%04X,X" },	// STx $0000,X
+			{ 2, "$%04X,Y" },	// STx $0000,Y
+			{ 1, "$%02X,X" },	// STx $00,X
+			{ 1, "$%02X,Y" },	// STx $00,Y
+			{ 1, "($%02X),Y" },	// STx ($00),Y
 
 			// Read-Modify-Write operations
-			{ &type::execZP_RMW_T2, 1, "$%02X" },		// RMW $00
-			{ &type::execAbs_RMW_T2, 2, "$%04X" },		// RMW $0000
-			{ &type::execZPX_RMW_T2, 1, "$%02X,X" },	// RMW $00,X
-			{ &type::execAbsX_RMW_T2, 2, "$%04X,X" },	// RMW $0000,X
-			{ &type::execAbsY_RMW_T2, 2, "$%04X,Y" },	// RMW $0000,Y [illegal]
-			{ &type::execIZPX_RMW_T2, 1, "($%02X,X)" },	// RMW ($00,X) [illegal]
-			{ &type::execIZPY_RMW_T2, 1, "($%02X),Y" },	// RMW ($00),Y [illegal]
+			{ 1, "$%02X" },		// RMW $00
+			{ 2, "$%04X" },		// RMW $0000
+			{ 1, "$%02X,X" },	// RMW $00,X
+			{ 2, "$%04X,X" },	// RMW $0000,X
+			{ 2, "$%04X,Y" },	// RMW $0000,Y [illegal]
+			{ 1, "($%02X,X)" },	// RMW ($00,X) [illegal]
+			{ 1, "($%02X),Y" },	// RMW ($00),Y [illegal]
 
 			// Miscellaneous Operations
-			{ &type::execPush_T2, 0, "" },				// Push to stack
-			{ &type::execPull_T2, 0, "" },				// Pull from stack
-			{ &type::execJump_T2, 2, "$%04X" },			// JMP $0000
-			{ &type::execJumpInd_T2, 2, "($%04X)" },	// JMP ($0000)
-			{ &type::execCall_T2, 2, "$%04X" },			// JSR $0000
-			{ &type::execRTS_T2, 0, "" },				// Return from Subroutine
-			{ &type::execBranch_T2, 1, "$%04X" },		// PC-relative
-			{ &type::execBreak_T2, 1, "#$%02X" },		// BRK/IRQ/NMI/RESET sequence
-			{ &type::execRTI_T2, 0, "" },				// Return from Interrupt
-			{ &type::execHalt_T2, 0, "" },				// Halt the processor
+			{ 0, "" },			// Push to stack
+			{ 0, "" },			// Pull from stack
+			{ 2, "$%04X" },		// JMP $0000
+			{ 2, "($%04X)" },	// JMP ($0000)
+			{ 2, "$%04X" },		// JSR $0000
+			{ 0, "" },			// Return from Subroutine
+			{ 1, "$%04X" },		// PC-relative
+			{ 1, "#$%02X" },	// BRK/IRQ/NMI/RESET sequence
+			{ 0, "" },			// Return from Interrupt
+			{ 0, "" },			// Halt the processor
 		};
+
 		static inline const ExecOpPtr ExecOp[] = {
 			&type::execADC,
 			&type::execAND,
