@@ -321,26 +321,15 @@ namespace m65xx {
 				const BaseOpcode &base = Opc6502[op];
 				BaseOp = base.Op;
 
-				// Trap and break handlers (if present) are called when the
-				// opcode matches. For traps, this is defined at class instantiation
-				// time. For breaks, this is always 0 (the BRK opcode).
-				//
-				// Both handlers work the same way. They are passed the address of
-				// this CPU instance and the address of the opcode. (The actual PC
-				// is one past this address because the PC increment has already
-				// happened). The handler should return true if it handled the opcode
-				// or false to let the opcode execute normally.
-
+				// Trap handlers (if present) are called when the opcode matches the
+				// trap opcode defined by this template's instatiation. Passed a
+				// reference to this CPU instance and the address of the opcode, the
+				// handler may return true if it handled the opcode or false to
+				// allow the opcode to execute normally. The actual PC points to the
+				// byte after the opcode.
 				if constexpr (trap_code >= 0) {
 					if (op == trap_code) {
 						if (Bus->trap(*this, PC - 1)) {
-							return &type::execFetch_T1;
-						}
-					}
-				}
-				if constexpr (HasBreakHandler<T, M6502>) {
-					if (op == 0) {
-						if (Bus->breakHandler(*this, PC - 1)) {
 							return &type::execFetch_T1;
 						}
 					}
@@ -1005,6 +994,18 @@ namespace m65xx {
 
 		ExecPtrRet execBreak_T2()		// Dummy read of PC
 		{
+			// If present, the break handler will be called for a software interrupt
+			// (i.e. the BRK instruction is executing). It is passed a reference to
+			// this CPU instance and the address of the BRK opcode. Returning true
+			// will cancel the rest of the interrupt sequence and continue execution
+			// at PC, which, unless changed by the handler, points one byte past BRK
+			// (not two bytes past as would be the case if the sequence continued
+			// and RTI was used to return to this point).
+			if constexpr (HasBreakHandler<T, M6502>) {
+				if (BaseOp == op::BRK && Bus->breakHandler(*this, PC - 1)) {
+					return nextInstr();
+				}
+			}
 			Bus->readAddr(PC);
 			// Software break increments PC; Hardware break does not
 			if (BaseOp == op::BRK) {
