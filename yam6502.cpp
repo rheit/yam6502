@@ -1,239 +1,88 @@
+#include "yam6502.h"
 #include <stdint.h>
 #include <array>
 
 namespace m65xx {
-	// Addressing modes
-	enum class am : uint8_t {
-		imp,				// implicit
-		acc,				// accumulator
-
-		// Internal execution on memory data
-		imm,				// #$00
-		zp,					// $00
-		zpx,				// $00,X
-		zpy,				// $00,Y
-		izx,				// ($00,X)
-		izy,				// ($00),Y
-		abs,				// $0000
-		abx,				// $0000,X
-		aby,				// $0000,Y
-
-		// Store operations (STA/STX/STY)
-		zp_sto,				// $00
-		abs_sto,			// $0000
-		izx_sto,			// ($00,X)
-		abx_sto,			// $0000,X
-		aby_sto,			// $0000,Y
-		zpx_sto,			// $00,X
-		zpy_sto,			// $00,Y
-		izy_sto,			// ($00),Y
-
-		// Read-Modify-Write operations
-		zp_rmw,				// $00
-		abs_rmw,			// $0000
-		zpx_rmw,			// $00,X
-		abx_rmw,			// $0000,X
-		aby_rmw,			// $0000,Y only used by illegal opcodes
-		izx_rmw,			// ($00,X) only used by illegal opcodes
-		izy_rmw,			// ($00),Y only used by illegal opcodes
-
-		// Miscellaneous Operations
-		push,				// Push to stack
-		pull,				// Pull from stack
-		jmp,				// JMP $0000
-		jmp_ind,			// JMP ($0000)
-		call,				// JSR $0000
-		rts,				// Return from Subroutine
-		rel,				// PC-relative (branch)
-		brk,				// BRK/IRQ/NMI/RESET sequence,
-		rti,				// Return from Interrupt
-		halt,				// Halt the processor by never transitioning back to T0
-
-		COUNT
-	};
-
-	// Operations
-	enum class op : uint8_t {
-
-		ADC,
-		AND,
-		ASL,
-		BCC,
-		BCS,
-		BEQ,
-		BIT,
-		BMI,
-		BNE,
-		BPL,
-		BRK,
-		BVC,
-		BVS,
-		CLC,
-		CLD,
-		CLI,
-		CLV,
-		CMP,
-		CPX,
-		CPY,
-		DEC,
-		DEX,
-		DEY,
-		EOR,
-		INC,
-		INX,
-		INY,
-		JMP,
-		JSR,
-		LDA,
-		LDX,
-		LDY,
-		LSR,
-		NOP,
-		ORA,
-		PHA,
-		PHP,
-		PLA,
-		PLP,
-		ROL,
-		ROR,
-		RTI,
-		RTS,
-		SBC,
-		SEC,
-		SED,
-		SEI,
-		STA,
-		STX,
-		STY,
-		TAX,
-		TAY,
-		TSX,
-		TXA,
-		TXS,
-		TYA,
+	const char OpNames[][4] = {
+		"ADC",
+		"AND",
+		"ASL",
+		"BCC",
+		"BCS",
+		"BEQ",
+		"BIT",
+		"BMI",
+		"BNE",
+		"BPL",
+		"BRK",
+		"BVC",
+		"BVS",
+		"CLC",
+		"CLD",
+		"CLI",
+		"CLV",
+		"CMP",
+		"CPX",
+		"CPY",
+		"DEC",
+		"DEX",
+		"DEY",
+		"EOR",
+		"INC",
+		"INX",
+		"INY",
+		"JMP",
+		"JSR",
+		"LDA",
+		"LDX",
+		"LDY",
+		"LSR",
+		"NOP",
+		"ORA",
+		"PHA",
+		"PHP",
+		"PLA",
+		"PLP",
+		"ROL",
+		"ROR",
+		"RTI",
+		"RTS",
+		"SBC",
+		"SEC",
+		"SED",
+		"SEI",
+		"STA",
+		"STX",
+		"STY",
+		"TAX",
+		"TAY",
+		"TSX",
+		"TXA",
+		"TXS",
+		"TYA",
 		// Illegal operations
-		AHX,
-		ALR,
-		ANC,
-		ARR,
-		AXS,
-		DCP,
-		ISC,
-		KIL,
-		LAS,
-		LAX,
-		LAX_IMM,
-		RLA,
-		RRA,
-		SAX,
-		SHX,
-		SHY,
-		SLO,
-		SRE,
-		TAS,
-		XAA,
-
-		COUNT,
-
-		// "Fake" operations
-		IRQ,
-		NMI,
-		RESET,
+		"AHX",
+		"ALR",
+		"ANC",
+		"ARR",
+		"AXS",
+		"DCP",
+		"ISC",
+		"KIL",
+		"LAS",
+		"LAX",
+		"LAX",
+		"RLA",
+		"RRA",
+		"SAX",
+		"SHX",
+		"SHY",
+		"SLO",
+		"SRE",
+		"TAS",
+		"XAA",
 	};
-
-	class OpNamesWrapper {
-	public:
-		constexpr const char *operator[](op operation) {
-			return Names[static_cast<int>(operation)];
-		}
-	private:
-		static constexpr const std::array<char[4], static_cast<int>(op::COUNT)> Names = {
-
-			"ADC",
-			"AND",
-			"ASL",
-			"BCC",
-			"BCS",
-			"BEQ",
-			"BIT",
-			"BMI",
-			"BNE",
-			"BPL",
-			"BRK",
-			"BVC",
-			"BVS",
-			"CLC",
-			"CLD",
-			"CLI",
-			"CLV",
-			"CMP",
-			"CPX",
-			"CPY",
-			"DEC",
-			"DEX",
-			"DEY",
-			"EOR",
-			"INC",
-			"INX",
-			"INY",
-			"JMP",
-			"JSR",
-			"LDA",
-			"LDX",
-			"LDY",
-			"LSR",
-			"NOP",
-			"ORA",
-			"PHA",
-			"PHP",
-			"PLA",
-			"PLP",
-			"ROL",
-			"ROR",
-			"RTI",
-			"RTS",
-			"SBC",
-			"SEC",
-			"SED",
-			"SEI",
-			"STA",
-			"STX",
-			"STY",
-			"TAX",
-			"TAY",
-			"TSX",
-			"TXA",
-			"TXS",
-			"TYA",
-			// Illegal operations
-			"AHX",
-			"ALR",
-			"ANC",
-			"ARR",
-			"AXS",
-			"DCP",
-			"ISC",
-			"KIL",
-			"LAS",
-			"LAX",
-			"LAX",
-			"RLA",
-			"RRA",
-			"SAX",
-			"SHX",
-			"SHY",
-			"SLO",
-			"SRE",
-			"TAS",
-			"XAA",
-		};
-	};
-	OpNamesWrapper OpNames;
-
-	struct BaseOpcode {
-		op Op;
-		am Mode;
-	};
+	static_assert(std::size(OpNames) == static_cast<int>(op::COUNT));
 
 	// Opcode definitions
 	const BaseOpcode Opc6502[256] = {
@@ -509,4 +358,51 @@ namespace m65xx {
 		{ op::INC, am::abx_rmw },	// FE
 		{ op::ISC, am::abx_rmw }	// FF
 	};
+
+	const DisasmInfo ModeTable[] = {
+		{ 0, "" },			// implicit
+		{ 0, "A" },			// accumulator
+
+		{ 1, "#$%02X" },	// #$00
+		{ 1, "$%02X" },		// $00
+		{ 1, "$%02X,X" },	// $00,X
+		{ 1, "$%02X,Y" },	// $00,Y
+		{ 1, "($%02X,X)" },	// ($00,X)
+		{ 1, "($%02X),Y" },	// ($00),Y
+		{ 2, "$%04X" },		// $0000
+		{ 2, "$%04X,X" },	// $0000,X
+		{ 2, "$%04X,Y" },	// $0000,Y
+
+		// Internal execution on memory data
+		{ 1, "$%02X" },		// STx $00
+		{ 2, "$%04X" },		// STx $0000
+		{ 1, "($%02X,X)" },	// STx ($00,X)
+		{ 2, "$%04X,X" },	// STx $0000,X
+		{ 2, "$%04X,Y" },	// STx $0000,Y
+		{ 1, "$%02X,X" },	// STx $00,X
+		{ 1, "$%02X,Y" },	// STx $00,Y
+		{ 1, "($%02X),Y" },	// STx ($00),Y
+
+		// Read-Modify-Write operations
+		{ 1, "$%02X" },		// RMW $00
+		{ 2, "$%04X" },		// RMW $0000
+		{ 1, "$%02X,X" },	// RMW $00,X
+		{ 2, "$%04X,X" },	// RMW $0000,X
+		{ 2, "$%04X,Y" },	// RMW $0000,Y [illegal]
+		{ 1, "($%02X,X)" },	// RMW ($00,X) [illegal]
+		{ 1, "($%02X),Y" },	// RMW ($00),Y [illegal]
+
+		// Miscellaneous Operations
+		{ 0, "" },			// Push to stack
+		{ 0, "" },			// Pull from stack
+		{ 2, "$%04X" },		// JMP $0000
+		{ 2, "($%04X)" },	// JMP ($0000)
+		{ 2, "$%04X" },		// JSR $0000
+		{ 0, "" },			// Return from Subroutine
+		{ 1, "$%04X" },		// PC-relative
+		{ 1, "#$%02X" },	// BRK/IRQ/NMI/RESET sequence
+		{ 0, "" },			// Return from Interrupt
+		{ 0, "" },			// Halt the processor
+	};
+	static_assert(std::size(ModeTable) == static_cast<int>(am::COUNT));
 }
