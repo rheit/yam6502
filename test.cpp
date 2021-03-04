@@ -438,12 +438,12 @@ struct MiniC64Bus {
 	} state = State::Running;
 
 	void tick();
-	void init(cputype &cpu);
+	void init(const cputype &cpu);
 	void startTest(cputype &cpu, uint16_t loadaddr);
 	int loadTest(std::string_view testname, bool reloc, uint16_t loadaddr);
 	static std::string pet2ascii(uint8_t pet);
 	bool breakHandler(cputype &cpu, uint16_t addr);
-	void syncHandler(cputype &cpu, uint16_t addr) const;
+	void syncHandler([[maybe_unused]] cputype &cpu, [[maybe_unused]] uint16_t addr) const;
 	bool trap(cputype &cpu, uint16_t addr);
 	[[nodiscard]] uint16_t readWord(uint16_t addr) const;
 	void writeWord(uint16_t addr, uint16_t data);
@@ -472,7 +472,7 @@ void MiniC64Bus::tick()
 	++clocks;
 }
 
-void MiniC64Bus::init(cputype &cpu)
+void MiniC64Bus::init(const cputype &cpu)
 {
 	CIA1.reset();
 	CIA2.reset();
@@ -543,9 +543,7 @@ void MiniC64Bus::startTest(cputype &cpu, uint16_t loadaddr)
 	// Find the real program immediately after the BASIC stub.
 	auto addr = readWord(loadaddr);
 	while (auto next = readWord(addr)) {
-		if (next != 0) {
-			addr = next;
-		}
+		addr = next;
 	}
 	// Start is the first non-0 byte
 	addr += 2;
@@ -575,10 +573,12 @@ int MiniC64Bus::loadTest(std::string_view testname, bool reloc, uint16_t loadadd
 
 		auto size = std::filesystem::file_size(path) - 2;
 		std::ifstream input(path, std::ios::binary);
-		uint8_t loadlo, loadhi;
+
+		uint8_t loadlo = 0x01;
+		uint8_t loadhi = 0x08;
 		input >> loadlo >> loadhi;
 		if (!reloc) {
-			loadaddr = (loadhi << 8) | loadlo;
+			loadaddr = (static_cast<uint16_t>(loadhi) << 8) | loadlo;
 		}
 		size = std::min<decltype(size)>(65536 - loadaddr, size);
 		if (input.read(reinterpret_cast<char *>(&memory[loadaddr]), size)) {
@@ -705,8 +705,7 @@ bool MiniC64Bus::trap(cputype &cpu, uint16_t addr)
 		// 32 bits are are the mantissa, in big-endian format. There is an
 		// implicit 1 just after the radix point (compared to just before
 		// it for IEEE-754).
-		uint16_t addr = (cpu.getY() << 8) | cpu.getA();
-		const uint8_t *mbf = &memory[addr];
+		const uint8_t *mbf = &memory[(cpu.getY() << 8) | cpu.getA()];
 		if (mbf[0] == 0) {
 			fp_arg = 0;
 		} else {
@@ -738,7 +737,8 @@ bool MiniC64Bus::trap(cputype &cpu, uint16_t addr)
 		return true;
 
 	case LINPRNT:
-		snprintf(reinterpret_cast<char *>(&memory[0x100]), 32, "%u", (cpu.getA() << 8) | cpu.getX());
+		snprintf(reinterpret_cast<char *>(&memory[0x100]), 32, "%u",
+			static_cast<unsigned>((cpu.getA() << 8) | cpu.getX()));
 		cpu.setY(1);
 		cpu.setA(0);
 		[[fallthrough]];

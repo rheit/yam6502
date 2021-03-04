@@ -235,12 +235,12 @@ namespace m65xx {
 		bool EmulateNMIBRKBug = false;
 
 		// Getters
-		[[nodiscard]] constexpr uint8_t getA() const { return A; }
-		[[nodiscard]] constexpr uint8_t getX() const { return X; }
-		[[nodiscard]] constexpr uint8_t getY() const { return Y; }
-		[[nodiscard]] constexpr uint16_t getSP() const { return 0x100 | SP; }
-		[[nodiscard]] constexpr uint16_t getPC() const { return PC; }
-		[[nodiscard]] constexpr uint8_t getP() const { return static_cast<uint8_t>(P); }
+		[[nodiscard]] uint8_t getA() const { return A; }
+		[[nodiscard]] uint8_t getX() const { return X; }
+		[[nodiscard]] uint8_t getY() const { return Y; }
+		[[nodiscard]] uint16_t getSP() const { return 0x100 | SP; }
+		[[nodiscard]] uint16_t getPC() const { return PC; }
+		[[nodiscard]] uint8_t getP() const { return static_cast<uint8_t>(P); }
 
 		// Setters
 		void setA(uint8_t val) { A = val; }
@@ -341,8 +341,8 @@ namespace m65xx {
 		public:
 			constexpr void setN(uint8_t val) { N = val; }
 			constexpr void setV(uint8_t val) { V = val; }
-			constexpr void setD(bool flag) { if (flag) DI |= FLAG_D; else DI &= ~FLAG_D; }
-			constexpr void setI(bool flag) { if (flag) DI |= FLAG_I; else DI &= ~FLAG_I; }
+			constexpr void setD(bool flag) { if (flag) { DI |= FLAG_D; } else { DI &= ~FLAG_D; } }
+			constexpr void setI(bool flag) { if (flag) { DI |= FLAG_I; } else { DI &= ~FLAG_I; } }
 			constexpr void setZ(bool flag) { Z = flag; }
 			constexpr void setC(bool flag) { C = flag; }
 
