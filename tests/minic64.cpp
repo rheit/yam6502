@@ -1,141 +1,26 @@
-#include <type_traits>
 #include <fstream>
 #include <iostream>
-#include <cerrno>
 #include <cmath>
 #include <cstring>
-#include <string_view>
 #include <filesystem>
-#include <algorithm>
-#include <chrono>
-#include <string>
 
 #include "yam6502.h"
-
-#ifdef _WIN32
-#include <conio.h>
-#else
-#include <unistd.h>
-#include <termios.h>
-
-char _getch()
-{
-	char buf = 0;
-	struct termios old {};
-	fflush(stdout);
-	if (tcgetattr(0, &old) < 0)
-		perror("tcsetattr()");
-	old.c_lflag &= ~ICANON;
-	old.c_lflag &= ~ECHO;
-	old.c_cc[VMIN] = 1;
-	old.c_cc[VTIME] = 0;
-	if (tcsetattr(0, TCSANOW, &old) < 0)
-		perror("tcsetattr ICANON");
-	if (read(0, &buf, 1) < 0)
-		perror("read()");
-	old.c_lflag |= ICANON;
-	old.c_lflag |= ECHO;
-	if (tcsetattr(0, TCSADRAIN, &old) < 0)
-		perror("tcsetattr ~ICANON");
-	return buf;
-}
-#endif
-
-enum class IO : uint16_t {
-	ErrorTrap = 0xff80,
-	PutChar = 0xff81,
-	GetChar = 0xff84,
-	Done = 0xff88,
-	InterruptPort = 0xff8c,
-};
-
-void dump_mem(FILE *out, const uint8_t *memory, uint16_t start, uint16_t end)
-{
-	for (auto i = start; i < end; ++i) {
-		if (!(i & 15)) {
-			fprintf(out, "\n%04X:", i);
-		}
-		else if (!(i & 3)) {
-			fputc(' ', out);
-		}
-		fprintf(out, " %02X", memory[i]);
-	}
-	fputc('\n', out);
-}
-
-void print_p(unsigned p)
-{
-	printf("P=%02X [%c%c%c%c%c%c]",
-		p & 0xFF,
-		p & m65xx::FLAG_N ? 'N' : '.',
-		p & m65xx::FLAG_V ? 'V' : '.',
-		p & m65xx::FLAG_D ? 'D' : '.',
-		p & m65xx::FLAG_I ? 'I' : '.',
-		p & m65xx::FLAG_Z ? 'Z' : '.',
-		p & m65xx::FLAG_C ? 'C' : '.'
-	);
-}
-
-struct TestBus {
-	uint8_t readAddr(uint16_t addr)
-	{
-		last_addr = addr;
-		if (addr == static_cast<uint16_t>(IO::GetChar)) {
-			return static_cast<uint8_t>(_getch());
-		}
-		return memory[addr];
-	}
-	void writeAddr(uint16_t addr, uint8_t val)
-	{
-		last_addr = addr;
-		if (addr == static_cast<uint16_t>(IO::PutChar)) {
-			std::cout << static_cast<char>(val);
-			return;
-		}
-		memory[addr] = val;
-	}
-	void dump_mem(uint16_t start, uint16_t end) const
-	{
-		::dump_mem(stdout, memory, start, end);
-	}
-#if 0
-	void syncHandler(m65xx::M6502<TestBus *> &cpu, uint16_t pc)
-	{
-		printf("A=%02X X=%02X Y=%02X S=%02X ",
-			cpu.getA(), cpu.getX(), cpu.getY(), cpu.getSP());
-		print_p(cpu.getP());
-		printf("  %s\n", cpu.disasmOp(pc, true).c_str());
-	}
-#endif
-	uint8_t memory[65536]{};
-	uint16_t last_addr = ~0;
-};
-
-struct TestBusWithInterrupts : public TestBus {
-	[[nodiscard]] bool getIRQB() const
-	{
-		return !(memory[static_cast<int>(IO::InterruptPort)] & 1);
-	}
-	[[nodiscard]] bool getNMIB() const
-	{
-		return !(memory[static_cast<int>(IO::InterruptPort)] & 2);
-	}
-};
+#include "test.h"
 
 class MiniCIA {
 public:
 	// Control register bits
-	  static constexpr inline uint8_t START		= 0x01;
+	static constexpr inline uint8_t START		= 0x01;
 	//static constexpr inline uint8_t PBON		= 0x02;
 	//static constexpr inline uint8_t OUTMODE	= 0x04;
-	  static constexpr inline uint8_t ONESHOT	= 0x08;
-	  static constexpr inline uint8_t LOAD		= 0x10;
+	static constexpr inline uint8_t ONESHOT		= 0x08;
+	static constexpr inline uint8_t LOAD		= 0x10;
 	//static constexpr inline uint8_t INMODE	= 0x20;		// only phi2 (0) supported
 	//static constexpr inline uint8_t SPMODE	= 0x40;
 	//static constexpr inline uint8_t TODIN		= 0x80;
 
 	// Different bits for Control Register B
-	  static constexpr inline uint8_t INMODEB	= 0x40;
+	static constexpr inline uint8_t INMODEB		= 0x40;
 	//static constexpr inline uint8_t ALARM		= 0x80;
 
 	[[nodiscard]] uint8_t readReg(int reg)
@@ -211,13 +96,13 @@ private:
 	uint8_t IrqDelay = 0;
 	bool Interrupt = false;
 
-	static constexpr inline uint8_t Count0    =   0x01;
-	static constexpr inline uint8_t Count1    =   0x02;
-	static constexpr inline uint8_t Count2    =   0x04;
-	static constexpr inline uint8_t Count3    =   0x08;
-	static constexpr inline uint8_t Load0     =   0x10;
-	static constexpr inline uint8_t Load1     =   0x20;
-	static constexpr inline uint8_t OneShot0  =   0x40;
+	static constexpr inline uint8_t Count0 = 0x01;
+	static constexpr inline uint8_t Count1 = 0x02;
+	static constexpr inline uint8_t Count2 = 0x04;
+	static constexpr inline uint8_t Count3 = 0x08;
+	static constexpr inline uint8_t Load0 = 0x10;
+	static constexpr inline uint8_t Load1 = 0x20;
+	static constexpr inline uint8_t OneShot0 = 0x40;
 	static constexpr inline uint8_t DelayMask = ~(Count0 | Load0 | OneShot0);
 
 	struct Timer
@@ -443,7 +328,7 @@ struct MiniC64Bus {
 	int loadTest(std::string_view testname, bool reloc, uint16_t loadaddr);
 	static std::string pet2ascii(uint8_t pet);
 	bool breakHandler(cputype &cpu, uint16_t addr);
-	void syncHandler([[maybe_unused]] cputype &cpu, [[maybe_unused]] uint16_t addr) const;
+	void syncHandler([[maybe_unused]] cputype &cpu, [[maybe_unused]] uint16_t pc) const;
 	bool trap(cputype &cpu, uint16_t addr);
 	[[nodiscard]] uint16_t readWord(uint16_t addr) const;
 	void writeWord(uint16_t addr, uint16_t data);
@@ -576,7 +461,8 @@ int MiniC64Bus::loadTest(std::string_view testname, bool reloc, uint16_t loadadd
 
 		uint8_t loadlo = 0x01;
 		uint8_t loadhi = 0x08;
-		input >> loadlo >> loadhi;
+		input >> loadlo;
+		input >> loadhi;
 		if (!reloc) {
 			loadaddr = (static_cast<uint16_t>(loadhi) << 8) | loadlo;
 		}
@@ -622,7 +508,7 @@ void MiniC64Bus::syncHandler([[maybe_unused]] cputype &cpu, [[maybe_unused]] uin
 		//	&& !(pc >= 0xa90 && pc < 0xaaf) // inside restorestack (irq.prg)
 		!(pc >= 0xa4b && pc < 0xa5a) // inside savestack (nmi.prg)
 		&& !(pc >= 0xa5b && pc < 0xa7a) // inside restorestack (nmi.prg)
-	) {
+		) {
 		printf("A=%02X X=%02X Y=%02X S=%02X ",
 			cpu.getA(), cpu.getX(), cpu.getY(), cpu.getSP());
 		print_p(cpu.getP());
@@ -680,7 +566,7 @@ bool MiniC64Bus::trap(cputype &cpu, uint16_t addr)
 		std::cout << pet2ascii(cpu.getA());
 		return true;
 
-	// Various BASIC routines used to print 16- and 32-bit decimal numbers
+		// Various BASIC routines used to print 16- and 32-bit decimal numbers
 	case FLOATC:
 		// FACHO[0] and FACHO[1] contain an unsigned 16-bit integer
 		// in big-endian order. X contains the MBF (Microsoft Binary
@@ -708,7 +594,8 @@ bool MiniC64Bus::trap(cputype &cpu, uint16_t addr)
 		const uint8_t *mbf = &memory[(cpu.getY() << 8) | cpu.getA()];
 		if (mbf[0] == 0) {
 			fp_arg = 0;
-		} else {
+		}
+		else {
 			uint64_t fpbits =
 				(uint64_t(mbf[1] & 0x80) << 56)
 				| (uint64_t(mbf[0] + (1023 - 129)) << 52)
@@ -717,7 +604,7 @@ bool MiniC64Bus::trap(cputype &cpu, uint16_t addr)
 				| (uint64_t(mbf[3]) << 29)
 				| (uint64_t(mbf[4]) << 21);
 			std::memcpy(&fp_arg, &fpbits, 8);
-			}
+		}
 		fp_accum *= fp_arg;
 		return true;
 	}
@@ -805,119 +692,6 @@ void MiniC64Bus::writeAddr(uint16_t addr, uint8_t data)
 	}
 }
 
-void run_functional_test()
-{
-	const uint16_t zero_page = 0;
-	const uint16_t zp_bss_end = 0x52;
-
-	const uint16_t data_segment = 0x200;
-	const uint16_t data_bss_end = 0x27b;
-
-	printf("Running functional tests\n");
-	TestBus bus;
-	{
-		std::ifstream input("tests/bin/6502_functional_test.bin", std::ios::binary);
-		if (input.read(reinterpret_cast<char *>(bus.memory), 65536).gcount() != 65536) {
-			std::cerr << "Failed reading 65536 bytes from 6502_functional_test.bin\n";
-			return;
-		}
-	}
-	m65xx::M6502<TestBus *> cpu(&bus);
-	cpu.setPC(0x400);
-	unsigned long long clocks = 0;
-	auto start = std::chrono::steady_clock::now();
-	while (bus.last_addr != static_cast<uint16_t>(IO::Done)) {
-		clocks++;
-		cpu.tick();
-		if (bus.last_addr == static_cast<uint16_t>(IO::ErrorTrap)) {
-			bus.dump_mem(zero_page, zp_bss_end);
-			bus.dump_mem(data_segment, data_bss_end);
-			[[maybe_unused]] int i = 0;	// Error!
-		}
-	}
-	std::chrono::duration<double> diff = std::chrono::steady_clock::now() - start;
-	std::cout << clocks << " cycles in " << diff.count() << " sec ("
-		<< clocks / diff.count() / 1000000 << " MHz)\n";
-}
-
-void run_interrupt_test()
-{
-	const uint16_t code_segment = 0x400;
-
-	printf("Running interrupt tests\n");
-	TestBusWithInterrupts bus;
-	{
-		std::ifstream input("tests/bin/6502_interrupt_test.bin", std::ios::binary);
-		if (input.read(reinterpret_cast<char *>(bus.memory + code_segment), 65536 - code_segment) && input.bad()) {
-			std::cerr << "Failed reding 6502_interrupt_test.bin\n";
-			return;
-		}
-	}
-	m65xx::M6502<decltype(&bus)> cpu(&bus);
-	cpu.setPC(code_segment);
-	unsigned long long clocks = 0;
-	auto start = std::chrono::steady_clock::now();
-	while (bus.last_addr != static_cast<uint16_t>(IO::Done)) {
-		++clocks;
-		cpu.tick();
-#if 0
-		const uint16_t zero_page = 0;
-		const uint16_t zp_bss = 6;
-
-		const uint16_t data_segment = 0x200;
-		const uint16_t data_bss = 0x204;
-
-		if (bus.last_addr == static_cast<uint16_t>(IO::ErrorTrap)) {
-			bus.dump_mem(zero_page, zp_bss);
-			bus.dump_mem(data_segment, data_bss);
-			[[maybe_unused]] int i = 0;	// Error!
-		}
-#endif
-	}
-	std::chrono::duration<double> diff = std::chrono::steady_clock::now() - start;
-	std::cout << clocks << " cycles in " << diff.count() << " sec ("
-		<< clocks / diff.count() / 1000000 << " MHz)\n";
-}
-
-void run_decimal_test()
-{
-	const auto decimal_org = 0x200;
-	enum {
-		N1, N2, HA, HNVZC, DA, DNVZC, AR, NF, VF, ZF, CF, ERROR
-	};
-
-	printf("Running decimal tests\n");
-	TestBus bus;
-	{
-		std::ifstream input("tests/bin/6502_decimal_test.bin", std::ios::binary | std::ios::in);
-		if (!input.read(reinterpret_cast<char *>(bus.memory + decimal_org), 65536 - decimal_org) && input.bad()) {
-			std::cerr << "Failed reading 6502_decimal_test.bin\n";
-			return;
-		}
-	}
-	m65xx::M6502<TestBus *> cpu(&bus);
-	cpu.setPC(decimal_org);
-	unsigned long long clocks = 0;
-	auto start = std::chrono::steady_clock::now();
-	while (bus.last_addr != static_cast<uint16_t>(IO::Done)) {
-		++clocks;
-		cpu.tick();
-	}
-	std::chrono::duration<double> diff = std::chrono::steady_clock::now() - start;
-	std::cout << clocks << " cycles in " << diff.count() << " sec ("
-		<< clocks / diff.count() / 1000000 << " MHz)\n";
-	if (bus.memory[ERROR]) {
-		printf("ERROR for $%02X + $%02x + %d:\n", bus.memory[N1], bus.memory[N2], cpu.getY());
-		auto expect_p = bus.memory[NF] | bus.memory[VF] | bus.memory[ZF] | bus.memory[CF];
-		printf("   Expected: A=$%02X, ", bus.memory[AR]);
-		print_p(expect_p);
-		printf("\n Got binary: A=$%02X, ", bus.memory[HA]);
-		print_p(bus.memory[HNVZC]);
-		printf("\nGot decimal: A=$%02X, ", bus.memory[DA]);
-		print_p(bus.memory[DNVZC]);
-		printf("\n");
-	}
-}
 
 void run_lorenz_tests()
 {
@@ -943,13 +717,4 @@ void run_lorenz_tests()
 		}
 		std::cout << "Exit code " << static_cast<int>(bus.memory[0xd7ff]) << '\n';
 	}
-}
-
-int main()
-{
-	run_functional_test();
-	run_decimal_test();
-	run_interrupt_test();
-	run_lorenz_tests();
-	return 0;
 }

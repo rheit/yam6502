@@ -254,7 +254,7 @@ namespace m65xx {
 		void reset()
 		{
 			BaseOp = op::RESET;
-			State = &M6502<T>::execBreak_T2;
+			State = &M6502::execBreak_T2;
 			NextIrqPending = IrqPending = false;
 			NmiPending = false;
 			NmiMemory = checkNMIB() ? ~0 : 0;
@@ -270,6 +270,12 @@ namespace m65xx {
 
 		// Disassemble the opcode at addr
 		std::string disasmOp(uint16_t addr, bool full_line)
+		{
+			return disasmStep(addr, full_line);
+		}
+
+		// Disassemble the opcode at addr, and advance addr to the next opcode
+		std::string disasmStep(uint16_t &addr, bool full_line)
 		{
 			// I wanted to play with std::format, but it doesn't exist
 			// in the standard library yet, so back to the C library I go.
@@ -322,6 +328,7 @@ namespace m65xx {
 						full_line ? 38 - buffpos : 1, ' ');
 				}
 			}
+			addr += 1 + info.OperandBytes;
 			return std::string(buffer, buffpos);
 		}
 
