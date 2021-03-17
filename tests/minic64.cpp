@@ -2,7 +2,6 @@
 #include <iostream>
 #include <cmath>
 #include <cstring>
-#include <filesystem>
 
 #include "yam6502.h"
 #include "test.h"
@@ -441,40 +440,42 @@ void MiniC64Bus::startTest(cputype &cpu, uint16_t loadaddr)
 // Returns address file was loaded to, or -1 on failure.
 int MiniC64Bus::loadTest(std::string_view testname, bool reloc, uint16_t loadaddr)
 {
-	try {
-		std::filesystem::path path = "tests/bin/lorenz";
-		// Convert file name from PETSCII to ASCII. In practice, this
-		// amounts to converting from uppercase to lowercase.
-		std::string name_ascii;
-		name_ascii.reserve(testname.size());
-		for (auto c : testname) {
-			name_ascii += pet2ascii(c);
-		}
-		path /= name_ascii;
-		path += ".prg";
-
-		// The TRAP* tests expect to get a BRK sequence.
-		DontTrapBreak = testname.compare(0, 4, "TRAP", 4) == 0;
-
-		auto size = std::filesystem::file_size(path) - 2;
-		std::ifstream input(path, std::ios::binary);
-
-		uint8_t loadlo = 0x01;
-		uint8_t loadhi = 0x08;
-		input >> loadlo;
-		input >> loadhi;
-		if (!reloc) {
-			loadaddr = (static_cast<uint16_t>(loadhi) << 8) | loadlo;
-		}
-		size = std::min<decltype(size)>(65536 - loadaddr, size);
-		if (input.read(reinterpret_cast<char *>(&memory[loadaddr]), size)) {
-			return loadaddr;
-		}
+	std::filesystem::path path{ TESTS_BIN };
+	// Convert file name from PETSCII to ASCII. In practice, this
+	// amounts to converting from uppercase to lowercase.
+	std::string name_ascii;
+	name_ascii.reserve(testname.size());
+	for (auto c : testname) {
+		name_ascii += pet2ascii(c);
 	}
-	catch (const std::runtime_error &error) {
-		std::cerr << error.what() << '\n';
+	path /= "lorenz";
+	path /= name_ascii;
+	path += ".prg";
+
+	// The TRAP* tests expect to get a BRK sequence.
+	DontTrapBreak = testname.compare(0, 4, "TRAP", 4) == 0;
+
+	std::ifstream input(path, std::ios::binary | std::ios::in);
+	if (!input.is_open()) {
+		pfileerror(path, "Could not open file");
+		return -1;
 	}
-	return -1;
+
+	uint8_t loadbase[2];
+	if (!input.read(reinterpret_cast<char *>(loadbase), 2)) {
+		pfileerror(path, "Could not read file");
+		return -1;
+	}
+	if (!reloc) {
+		loadaddr = (static_cast<uint16_t>(loadbase[1]) << 8) | loadbase[0];
+	}
+	// Try to read as much as possible
+	input.read(reinterpret_cast<char *>(&memory[loadaddr]), static_cast<std::streamsize>(65536) - loadaddr);
+	if (input.gcount() == 0 || input.bad()) {
+		pfileerror(path, "Could not read file");
+		return -1;
+	}
+	return loadaddr;
 }
 
 std::string MiniC64Bus::pet2ascii(uint8_t pet)

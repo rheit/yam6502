@@ -2,6 +2,7 @@
 #include "yam6502.h"
 #include <stdio.h>
 #include <memory>
+#include <array>
 
 
 struct RAMBus {

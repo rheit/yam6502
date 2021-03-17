@@ -88,6 +88,24 @@ struct TestBusWithInterrupts : public TestBus {
 	}
 };
 
+bool load_test(std::string_view filename, uint8_t *base, int offset)
+{
+	std::filesystem::path path{ TESTS_BIN };
+	path /= filename;
+	std::ifstream input(path, std::ios::binary | std::ios::in);
+	if (!input.is_open()) {
+		pfileerror(path, "Failed to open file");
+		return false;
+	}
+	// Try to read as much as possible
+	input.read(reinterpret_cast<char *>(base + offset), static_cast<std::streamsize>(65536) - offset);
+	if (input.gcount() == 0 || input.bad()) {
+		pfileerror(path, "Failed to read file");
+		return false;
+	}
+	return true;
+}
+
 void run_functional_test()
 {
 	const uint16_t zero_page = 0;
@@ -98,12 +116,8 @@ void run_functional_test()
 
 	printf("Running functional tests\n");
 	TestBus bus;
-	{
-		std::ifstream input("tests/bin/6502_functional_test.bin", std::ios::binary);
-		if (input.read(reinterpret_cast<char *>(bus.memory), 65536).gcount() != 65536) {
-			std::cerr << "Failed reading 65536 bytes from 6502_functional_test.bin\n";
-			return;
-		}
+	if (!load_test("6502_functional_test.bin", bus.memory, 0)) {
+		return;
 	}
 	m65xx::M6502<TestBus *> cpu(&bus);
 	cpu.setPC(0x400);
@@ -129,12 +143,8 @@ void run_interrupt_test()
 
 	printf("Running interrupt tests\n");
 	TestBusWithInterrupts bus;
-	{
-		std::ifstream input("tests/bin/6502_interrupt_test.bin", std::ios::binary);
-		if (input.read(reinterpret_cast<char *>(bus.memory + code_segment), 65536 - code_segment) && input.bad()) {
-			std::cerr << "Failed reding 6502_interrupt_test.bin\n";
-			return;
-		}
+	if (!load_test("6502_interrupt_test.bin", bus.memory, code_segment)) {
+		return;
 	}
 	m65xx::M6502<decltype(&bus)> cpu(&bus);
 	cpu.setPC(code_segment);
@@ -171,12 +181,8 @@ void run_decimal_test()
 
 	printf("Running decimal tests\n");
 	TestBus bus;
-	{
-		std::ifstream input("tests/bin/6502_decimal_test.bin", std::ios::binary | std::ios::in);
-		if (!input.read(reinterpret_cast<char *>(bus.memory + decimal_org), 65536 - decimal_org) && input.bad()) {
-			std::cerr << "Failed reading 6502_decimal_test.bin\n";
-			return;
-		}
+	if (!load_test("6502_decimal_test.bin", bus.memory, decimal_org)) {
+		return;
 	}
 	m65xx::M6502<TestBus *> cpu(&bus);
 	cpu.setPC(decimal_org);

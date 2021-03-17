@@ -1,3 +1,8 @@
+#include <cstdio>
+#include <cerrno>
+#include <cstring>
+#include <iostream>
+
 #include "yam6502.h"
 #include "test.h"
 
@@ -26,6 +31,12 @@ void print_p(unsigned p)
 		p & m65xx::FLAG_Z ? 'Z' : '.',
 		p & m65xx::FLAG_C ? 'C' : '.'
 	);
+}
+
+void pfileerror(std::filesystem::path path, const char *errmsg)
+{
+	puts(TESTS_BIN);
+	std::cerr << errmsg << ": " << strerror(errno) << ' ' << path << '\n';
 }
 
 int main()
