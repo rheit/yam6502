@@ -22,7 +22,7 @@ main:
 e           .macro
             jsr print
             .text " - block "
-            .text "@1"
+            .text @1
             .text " failed"
             .byte 13,0
 
