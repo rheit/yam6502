@@ -43,7 +43,7 @@ enum class IO : uint16_t {
 };
 
 struct TestBus {
-	uint8_t readAddr(uint16_t addr)
+	uint8_t ReadAddr(uint16_t addr)
 	{
 		last_addr = addr;
 		if (addr == static_cast<uint16_t>(IO::GetChar)) {
@@ -51,7 +51,7 @@ struct TestBus {
 		}
 		return memory[addr];
 	}
-	void writeAddr(uint16_t addr, uint8_t val)
+	void WriteAddr(uint16_t addr, uint8_t val)
 	{
 		last_addr = addr;
 		if (addr == static_cast<uint16_t>(IO::PutChar)) {
@@ -65,12 +65,12 @@ struct TestBus {
 		::dump_mem(stdout, memory, start, end);
 	}
 #if 0
-	void syncHandler(m65xx::M6502<TestBus *> &cpu, uint16_t pc)
+	void SyncHandler(m65xx::M6502<TestBus *> &cpu, uint16_t pc)
 	{
 		printf("A=%02X X=%02X Y=%02X S=%02X ",
 			cpu.getA(), cpu.getX(), cpu.getY(), cpu.getSP());
 		print_p(cpu.getP());
-		printf("  %s\n", cpu.disasmOp(pc, true).c_str());
+		printf("  %s\n", cpu.DisasmOp(pc, true).c_str());
 	}
 #endif
 	uint8_t memory[65536]{};
@@ -78,11 +78,11 @@ struct TestBus {
 };
 
 struct TestBusWithInterrupts : public TestBus {
-	[[nodiscard]] bool getIRQB() const
+	[[nodiscard]] bool GetIRQB() const
 	{
 		return !(memory[static_cast<int>(IO::InterruptPort)] & 1);
 	}
-	[[nodiscard]] bool getNMIB() const
+	[[nodiscard]] bool GetNMIB() const
 	{
 		return !(memory[static_cast<int>(IO::InterruptPort)] & 2);
 	}
@@ -125,7 +125,7 @@ void run_functional_test()
 	auto start = std::chrono::steady_clock::now();
 	while (bus.last_addr != static_cast<uint16_t>(IO::Done)) {
 		clocks++;
-		cpu.tick();
+		cpu.Tick();
 		if (bus.last_addr == static_cast<uint16_t>(IO::ErrorTrap)) {
 			bus.dump_mem(zero_page, zp_bss_end);
 			bus.dump_mem(data_segment, data_bss_end);
@@ -152,7 +152,7 @@ void run_interrupt_test()
 	auto start = std::chrono::steady_clock::now();
 	while (bus.last_addr != static_cast<uint16_t>(IO::Done)) {
 		++clocks;
-		cpu.tick();
+		cpu.Tick();
 #if 0
 		const uint16_t zero_page = 0;
 		const uint16_t zp_bss = 6;
@@ -190,7 +190,7 @@ void run_decimal_test()
 	auto start = std::chrono::steady_clock::now();
 	while (bus.last_addr != static_cast<uint16_t>(IO::Done)) {
 		++clocks;
-		cpu.tick();
+		cpu.Tick();
 	}
 	std::chrono::duration<double> diff = std::chrono::steady_clock::now() - start;
 	std::cout << clocks << " cycles in " << diff.count() << " sec ("

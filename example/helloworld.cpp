@@ -6,15 +6,15 @@
 
 
 struct RAMBus {
-	[[maybe_unused]] uint8_t readAddr(uint16_t addr) const { return Memory[addr]; }
-	void writeAddr(uint16_t addr, uint8_t val) { Memory[addr] = val; }
+	[[maybe_unused]] uint8_t ReadAddr(uint16_t addr) const { return Memory[addr]; }
+	void WriteAddr(uint16_t addr, uint8_t val) { Memory[addr] = val; }
 	uint8_t &operator[](uint16_t addr) { return Memory[addr]; }
 
 	std::array<uint8_t, 65536> Memory = { 0 };
 };
 
 struct CharOutBus : RAMBus {
-	void writeAddr(uint16_t addr, uint8_t val)
+	void WriteAddr(uint16_t addr, uint8_t val)
 	{
 		Memory[addr] = val;
 		if (addr == 0x0F) {
@@ -61,10 +61,10 @@ int main()
 	// Loop until the PC hits $FF00. This will happen when the BRK
 	// at the end of our routine is executed.
 	for (auto pc = cpu.getPC(); pc != 0xFF00; pc = cpu.getPC()) {
-		cpu.tick();
+		cpu.Tick();
 	}
 
 	for (uint16_t codeptr = 0x600; codeptr < 0x600 + sizeof(code); ) {
-		puts(cpu.disasmStep(codeptr, true).c_str());
+		puts(cpu.DisasmStep(codeptr, true).c_str());
 	}
 }

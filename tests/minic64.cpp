@@ -22,42 +22,42 @@ public:
 	static constexpr inline uint8_t INMODEB		= 0x40;
 	//static constexpr inline uint8_t ALARM		= 0x80;
 
-	[[nodiscard]] uint8_t readReg(int reg)
+	[[nodiscard]] uint8_t ReadReg(int reg)
 	{
 		switch (reg) {
 		case 4:		return TimerA.Counter & 0xFF;
 		case 5:		return TimerA.Counter >> 8;
 		case 6:		return TimerB.Counter & 0xFF;
 		case 7:		return TimerB.Counter >> 8;
-		case 13:	return readIrqData();
+		case 13:	return ReadIrqData();
 		case 14:	return TimerA.Control;
 		case 15:	return TimerB.Control;
 		}
 		return 0;
 	}
 
-	void writeReg(int reg, uint8_t data)
+	void WriteReg(int reg, uint8_t data)
 	{
 		switch (reg) {
-		case 4:		TimerA.setLo(data); break;
-		case 5:		TimerA.setHi(data); break;
-		case 6:		TimerB.setLo(data); break;
-		case 7:		TimerB.setHi(data); break;
-		case 13:	writeIrqMask(data); break;
-		case 14:	TimerA.writeControl(data); break;
-		case 15:	TimerB.writeControl(data); break;
+		case 4:		TimerA.SetLo(data); break;
+		case 5:		TimerA.SetHi(data); break;
+		case 6:		TimerB.SetLo(data); break;
+		case 7:		TimerB.SetHi(data); break;
+		case 13:	WriteIrqMask(data); break;
+		case 14:	TimerA.WriteControl(data); break;
+		case 15:	TimerB.WriteControl(data); break;
 		}
 	}
 
-	void tick()
+	void Tick()
 	{
-		bool a_out = TimerA.tick(*this, 1);
+		bool a_out = TimerA.Tick(*this, 1);
 		// If timer B in cascade mode, stick the output of timer A
 		// into its pipeline.
 		if (a_out && (TimerB.Control & INMODEB)) {
 			TimerB.Delay |= Count1;
 		}
-		TimerB.tick(*this, 2);
+		TimerB.Tick(*this, 2);
 
 		// Set interrupt line
 		if (IrqDelay & 2) {
@@ -67,27 +67,27 @@ public:
 		IrqDelay <<= 1;
 	}
 
-	void reset()
+	void Reset()
 	{
-		TimerA.reset();
-		TimerB.reset();
+		TimerA.Reset();
+		TimerB.Reset();
 		IrqData = 0;
 		IrqMask = 0x81;
 		IrqDelay = 0;
 		Interrupt = false;
 	}
 
-	[[nodiscard]] uint16_t getTimerA() const;
-	[[nodiscard]] uint16_t getTimerB() const;
-	[[nodiscard]] uint8_t getTimerADelay() const;
-	[[nodiscard]] uint8_t getTimerBDelay() const;
+	[[nodiscard]] uint16_t GetTimerA() const;
+	[[nodiscard]] uint16_t GetTimerB() const;
+	[[nodiscard]] uint8_t GetTimerADelay() const;
+	[[nodiscard]] uint8_t GetTimerBDelay() const;
 
-	[[nodiscard]] bool getIRQB() const
+	[[nodiscard]] bool GetIRQB() const
 	{
 		return !Interrupt;
 	}
 
-	[[nodiscard]] uint8_t getICR() const;
+	[[nodiscard]] uint8_t GetICR() const;
 
 private:
 	uint8_t IrqData = 0;
@@ -111,7 +111,7 @@ private:
 		uint8_t Control = 0;
 		uint8_t Delay = 0, Feed = 0;
 
-		void reset()
+		void Reset()
 		{
 			Latch = 0xFFFF;
 			Counter = 0;
@@ -119,12 +119,12 @@ private:
 			Delay = Feed = 0;
 		}
 
-		void setLo(uint8_t data)
+		void SetLo(uint8_t data)
 		{
 			Latch = (Latch & 0xFF00) | data;
 		}
 
-		void setHi(uint8_t data)
+		void SetHi(uint8_t data)
 		{
 			Latch = (Latch & 0x00FF) | (data << 8);
 			// Load counter if timer is stopped
@@ -133,7 +133,7 @@ private:
 			}
 		}
 
-		void writeControl(uint8_t data)
+		void WriteControl(uint8_t data)
 		{
 			// Start/stop timer
 			if (data & START && !(data & INMODEB)) {
@@ -161,7 +161,7 @@ private:
 			Control = data;
 		}
 
-		bool tick(MiniCIA &cia, const uint8_t icrbit)
+		bool Tick(MiniCIA &cia, const uint8_t icrbit)
 		{
 			// Assume no underflow
 			bool out = false;
@@ -213,7 +213,7 @@ private:
 
 	Timer TimerA, TimerB;
 
-	[[nodiscard]] uint8_t readIrqData()
+	[[nodiscard]] uint8_t ReadIrqData()
 	{
 		uint8_t icr = IrqData | (Interrupt << 7);
 
@@ -225,7 +225,7 @@ private:
 		return icr;
 	}
 
-	void writeIrqMask(uint8_t mask)
+	void WriteIrqMask(uint8_t mask)
 	{
 		if (mask & 0x80) {
 			IrqMask |= mask & 0x1F;
@@ -240,27 +240,27 @@ private:
 	}
 };
 
-[[nodiscard]] uint16_t MiniCIA::getTimerA() const
+[[nodiscard]] uint16_t MiniCIA::GetTimerA() const
 {
 	return TimerA.Counter;
 }
 
-[[nodiscard]] uint16_t MiniCIA::getTimerB() const
+[[nodiscard]] uint16_t MiniCIA::GetTimerB() const
 {
 	return TimerB.Counter;
 }
 
-[[nodiscard]] uint8_t MiniCIA::getTimerADelay() const
+[[nodiscard]] uint8_t MiniCIA::GetTimerADelay() const
 {
 	return TimerA.Delay;
 }
 
-[[nodiscard]] uint8_t MiniCIA::getTimerBDelay() const
+[[nodiscard]] uint8_t MiniCIA::GetTimerBDelay() const
 {
 	return TimerB.Delay;
 }
 
-[[nodiscard]] uint8_t MiniCIA::getICR() const
+[[nodiscard]] uint8_t MiniCIA::GetICR() const
 {
 	return IrqData | (Interrupt << 7);
 }
@@ -321,45 +321,45 @@ struct MiniC64Bus {
 		Failed
 	} state = State::Running;
 
-	void tick();
-	void init(const cputype &cpu);
-	void startTest(cputype &cpu, uint16_t loadaddr);
-	int loadTest(std::string_view testname, bool reloc, uint16_t loadaddr);
+	void Tick();
+	void Init(const cputype &cpu);
+	void StartTest(cputype &cpu, uint16_t loadaddr);
+	int LoadTest(std::string_view testname, bool reloc, uint16_t loadaddr);
 	static std::string pet2ascii(uint8_t pet);
-	bool breakHandler(cputype &cpu, uint16_t addr);
-	void syncHandler([[maybe_unused]] cputype &cpu, [[maybe_unused]] uint16_t pc) const;
-	bool trap(cputype &cpu, uint16_t addr);
-	[[nodiscard]] uint16_t readWord(uint16_t addr) const;
-	void writeWord(uint16_t addr, uint16_t data);
-	uint8_t readAddr(uint16_t addr);
-	void writeAddr(uint16_t addr, uint8_t data);
+	bool BreakHandler(cputype &cpu, uint16_t addr);
+	void SyncHandler([[maybe_unused]] cputype &cpu, [[maybe_unused]] uint16_t pc) const;
+	bool Trap(cputype &cpu, uint16_t addr);
+	[[nodiscard]] uint16_t ReadWord(uint16_t addr) const;
+	void WriteWord(uint16_t addr, uint16_t data);
+	uint8_t ReadAddr(uint16_t addr);
+	void WriteAddr(uint16_t addr, uint8_t data);
 
-	[[nodiscard]] uint8_t readNoSideEffects(uint16_t addr) const
+	[[nodiscard]] uint8_t ReadNoSideEffects(uint16_t addr) const
 	{
 		return memory[addr];
 	}
 
-	[[nodiscard]] bool getIRQB() const
+	[[nodiscard]] bool GetIRQB() const
 	{
-		return CIA1.getIRQB();
+		return CIA1.GetIRQB();
 	}
-	[[nodiscard]] bool getNMIB() const
+	[[nodiscard]] bool GetNMIB() const
 	{
-		return CIA2.getIRQB();
+		return CIA2.GetIRQB();
 	}
 };
 
-void MiniC64Bus::tick()
+void MiniC64Bus::Tick()
 {
-	CIA1.tick();
-	CIA2.tick();
+	CIA1.Tick();
+	CIA2.Tick();
 	++clocks;
 }
 
-void MiniC64Bus::init(const cputype &cpu)
+void MiniC64Bus::Init(const cputype &cpu)
 {
-	CIA1.reset();
-	CIA2.reset();
+	CIA1.Reset();
+	CIA2.Reset();
 
 	// Set traps for several ROM routines
 	for (auto traploc :
@@ -370,7 +370,7 @@ void MiniC64Bus::init(const cputype &cpu)
 	}
 
 	memory[VEC_SETNAM] = 0x4C;		// JMP
-	writeWord(VEC_SETNAM + 1, SETNAM);
+	WriteWord(VEC_SETNAM + 1, SETNAM);
 
 	memory[VEC_IOINIT] = 0x60;		// RTS because not relevant here
 
@@ -395,8 +395,8 @@ void MiniC64Bus::init(const cputype &cpu)
 	std::copy(setnam, setnam + sizeof(setnam), &memory[SETNAM]);
 
 	// Setup vectors
-	writeWord(cpu.opToVector(m65xx::op::IRQ), PULS);
-	writeWord(CBINV, TIMB);
+	WriteWord(cpu.opToVector(m65xx::op::IRQ), PULS);
+	WriteWord(CBINV, TIMB);
 
 	// Copy IRQ handler
 	static const uint8_t puls[] = {
@@ -415,18 +415,18 @@ void MiniC64Bus::init(const cputype &cpu)
 	std::copy(puls, puls + sizeof(puls), &memory[PULS]);
 }
 
-void MiniC64Bus::startTest(cputype &cpu, uint16_t loadaddr)
+void MiniC64Bus::StartTest(cputype &cpu, uint16_t loadaddr)
 {
-	init(cpu);
+	Init(cpu);
 
 	// Set up top of stack so RTS goes to READY
-	writeWord(0x1FE, READY - 1);
+	WriteWord(0x1FE, READY - 1);
 	cpu.setSP(0x1FD);
 	cpu.setP(0);
 
 	// Find the real program immediately after the BASIC stub.
-	auto addr = readWord(loadaddr);
-	while (auto next = readWord(addr)) {
+	auto addr = ReadWord(loadaddr);
+	while (auto next = ReadWord(addr)) {
 		addr = next;
 	}
 	// Start is the first non-0 byte
@@ -438,7 +438,7 @@ void MiniC64Bus::startTest(cputype &cpu, uint16_t loadaddr)
 }
 
 // Returns address file was loaded to, or -1 on failure.
-int MiniC64Bus::loadTest(std::string_view testname, bool reloc, uint16_t loadaddr)
+int MiniC64Bus::LoadTest(std::string_view testname, bool reloc, uint16_t loadaddr)
 {
 	std::filesystem::path path{ TESTS_BIN };
 	// Convert file name from PETSCII to ASCII. In practice, this
@@ -461,7 +461,7 @@ int MiniC64Bus::loadTest(std::string_view testname, bool reloc, uint16_t loadadd
 		return -1;
 	}
 
-	uint8_t loadbase[2];
+	uint8_t loadbase[2] = { 0x01, 0x08 };
 	if (!input.read(reinterpret_cast<char *>(loadbase), 2)) {
 		pfileerror(path, "Could not read file");
 		return -1;
@@ -501,7 +501,7 @@ std::string MiniC64Bus::pet2ascii(uint8_t pet)
 	return std::string(1, pet);
 }
 
-void MiniC64Bus::syncHandler([[maybe_unused]] cputype &cpu, [[maybe_unused]] uint16_t pc) const
+void MiniC64Bus::SyncHandler([[maybe_unused]] cputype &cpu, [[maybe_unused]] uint16_t pc) const
 {
 #if 0
 	if (
@@ -514,20 +514,20 @@ void MiniC64Bus::syncHandler([[maybe_unused]] cputype &cpu, [[maybe_unused]] uin
 			cpu.getA(), cpu.getX(), cpu.getY(), cpu.getSP());
 		print_p(cpu.getP());
 		printf(" T=[{%02x}%-5u {%02x}%-5u {%02x}%-5u {%02x}%-5u] %s\n",
-			CIA1.getTimerADelay(),
-			CIA1.getTimerA(),
-			CIA1.getTimerBDelay(),
-			CIA1.getTimerB(),
-			CIA2.getTimerADelay(),
-			CIA2.getTimerA(),
-			CIA2.getTimerBDelay(),
-			CIA2.getTimerB(),
-			cpu.disasmOp(pc, true).c_str());
+			CIA1.GetTimerADelay(),
+			CIA1.GetTimerA(),
+			CIA1.GetTimerBDelay(),
+			CIA1.GetTimerB(),
+			CIA2.GetTimerADelay(),
+			CIA2.GetTimerA(),
+			CIA2.GetTimerBDelay(),
+			CIA2.GetTimerB(),
+			cpu.DisasmOp(pc, true).c_str());
 	}
 #endif
 }
 
-bool MiniC64Bus::breakHandler([[maybe_unused]] cputype &cpu, uint16_t addr)
+bool MiniC64Bus::BreakHandler([[maybe_unused]] cputype &cpu, uint16_t addr)
 {
 	if (!DontTrapBreak && addr >= 0xA000) {
 		fprintf(stderr, "Unhandled routine at $%04X\n", addr);
@@ -539,7 +539,7 @@ bool MiniC64Bus::breakHandler([[maybe_unused]] cputype &cpu, uint16_t addr)
 	return false;
 }
 
-bool MiniC64Bus::trap(cputype &cpu, uint16_t addr)
+bool MiniC64Bus::Trap(cputype &cpu, uint16_t addr)
 {
 	switch (addr) {
 	case TIMB:
@@ -551,12 +551,12 @@ bool MiniC64Bus::trap(cputype &cpu, uint16_t addr)
 		return true;
 
 	case VEC_RESTOR:
-		init(cpu);
+		Init(cpu);
 		return true;
 
 	case VEC_LOAD: {
-		std::string_view test{ reinterpret_cast<char *>(&memory[readWord(FNADR)]), memory[FNLEN] };
-		if (loadTest(test, !!memory[SA], (cpu.getX() << 8) | cpu.getY()) < 0) {
+		std::string_view test{ reinterpret_cast<char *>(&memory[ReadWord(FNADR)]), memory[FNLEN] };
+		if (LoadTest(test, !!memory[SA], (cpu.getX() << 8) | cpu.getY()) < 0) {
 			std::cerr << "Failed loading " << test << '\n';
 			state = State::Failed;
 		}
@@ -638,24 +638,24 @@ bool MiniC64Bus::trap(cputype &cpu, uint16_t addr)
 	return false;
 }
 
-[[nodiscard]] uint16_t MiniC64Bus::readWord(uint16_t addr) const
+[[nodiscard]] uint16_t MiniC64Bus::ReadWord(uint16_t addr) const
 {
 	return memory[addr] + (memory[addr + 1] << 8);
 }
 
-void MiniC64Bus::writeWord(uint16_t addr, uint16_t data)
+void MiniC64Bus::WriteWord(uint16_t addr, uint16_t data)
 {
 	memory[addr] = data & 0xFF;
 	memory[addr + 1] = data >> 8;
 }
 
-uint8_t MiniC64Bus::readAddr(uint16_t addr)
+uint8_t MiniC64Bus::ReadAddr(uint16_t addr)
 {
 #if 0
-	auto irqb = getIRQB();
-	auto nmib = getNMIB();
-	auto icr1 = CIA1.getICR();
-	auto icr2 = CIA2.getICR();
+	auto irqb = GetIRQB();
+	auto nmib = GetNMIB();
+	auto icr1 = CIA1.GetICR();
+	auto icr2 = CIA2.GetICR();
 	printf("Read %04x, IRQB=%d NMIB=%d ICR1=%02x ICR2=%02x", addr, irqb, nmib, icr1, icr2);
 	if (!nmib)
 		printf("*************************************************");
@@ -666,15 +666,15 @@ uint8_t MiniC64Bus::readAddr(uint16_t addr)
 		return 0x80;
 	}
 	if ((addr & 0xFF00) == 0xDC00) {
-		return CIA1.readReg(addr & 15);
+		return CIA1.ReadReg(addr & 15);
 	}
 	if ((addr & 0xFF00) == 0xDD00) {
-		return CIA2.readReg(addr & 15);
+		return CIA2.ReadReg(addr & 15);
 	}
 	return memory[addr];
 }
 
-void MiniC64Bus::writeAddr(uint16_t addr, uint8_t data)
+void MiniC64Bus::WriteAddr(uint16_t addr, uint8_t data)
 {
 	if (addr == PNTR) {
 		std::cout << '\r';
@@ -683,10 +683,10 @@ void MiniC64Bus::writeAddr(uint16_t addr, uint8_t data)
 		}
 	}
 	else if ((addr & 0xFF00) == 0xDC00) {
-		CIA1.writeReg(addr & 15, data);
+		CIA1.WriteReg(addr & 15, data);
 	}
 	else if ((addr & 0xFF00) == 0xDD00) {
-		CIA2.writeReg(addr & 15, data);
+		CIA2.WriteReg(addr & 15, data);
 	}
 	else {
 		memory[addr] = data;
@@ -700,12 +700,12 @@ void run_lorenz_tests()
 	MiniC64Bus bus;
 	MiniC64Bus::cputype cpu(&bus);
 	cpu.EmulateNMIBRKBug = true;
-	if (auto loadaddr = bus.loadTest("START", false, 0)) {
-		bus.startTest(cpu, loadaddr);
+	if (auto loadaddr = bus.LoadTest("START", false, 0)) {
+		bus.StartTest(cpu, loadaddr);
 		auto start = std::chrono::steady_clock::now();
 		while (bus.state == MiniC64Bus::State::Running) {
-			cpu.tick();
-			bus.tick();
+			cpu.Tick();
+			bus.Tick();
 		}
 		std::chrono::duration<double> diff = std::chrono::steady_clock::now() - start;
 		std::cout << bus.clocks << " cycles in " << diff.count() << " sec ("

@@ -171,31 +171,31 @@ namespace m65xx {
 
 	template<typename T>
 	concept HasGetRDY = requires (T bus) {
-		{ bus->getRDY() } -> std::convertible_to<bool>;
+		{ bus->GetRDY() } -> std::convertible_to<bool>;
 	};
 	template<typename T>
 	concept HasGetIRQB = requires (T bus) {
-		{ bus->getIRQB() } -> std::convertible_to<bool>;
+		{ bus->GetIRQB() } -> std::convertible_to<bool>;
 	};
 	template<typename T>
 	concept HasGetNMIB = requires (T bus) {
-		{ bus->getNMIB() } -> std::convertible_to<bool>;
+		{ bus->GetNMIB() } -> std::convertible_to<bool>;
 	};
 	template<typename T>
 	concept HasGetRESB = requires (T bus) {
-		{ bus->getRESB() } -> std::convertible_to<bool>;
+		{ bus->GetRESB() } -> std::convertible_to<bool>;
 	};
 	template<typename T, typename U>
 	concept HasSyncHandler = requires (T bus, U & cpu, uint16_t addr) {
-		{ bus->syncHandler(cpu, addr) };
+		{ bus->SyncHandler(cpu, addr) };
 	};
 	template<typename T, typename U>
 	concept HasBreakHandler = requires (T bus, U &cpu, uint16_t addr) {
-		{ bus->breakHandler(cpu, addr) } -> std::convertible_to<bool>;
+		{ bus->BreakHandler(cpu, addr) } -> std::convertible_to<bool>;
 	};
 	template<typename T>
 	concept HasReadNoSideEffects = requires (T bus, uint16_t addr) {
-		{ bus->readNoSideEffects(addr) } -> std::convertible_to<uint8_t>;
+		{ bus->ReadNoSideEffects(addr) } -> std::convertible_to<uint8_t>;
 	};
 
 	/*
@@ -251,36 +251,36 @@ namespace m65xx {
 		void setP(uint8_t val) { P = val; }
 
 		// Do something
-		void reset()
+		void Reset()
 		{
 			BaseOp = op::RESET;
 			State = &M6502::execBreak_T2;
 			NextIrqPending = IrqPending = false;
 			NmiPending = false;
-			NmiMemory = checkNMIB() ? ~0 : 0;
+			NmiMemory = CheckNMIB() ? ~0 : 0;
 			InterruptGen = false;
 		}
 
-		void tick()
+		void Tick()
 		{
 			assert(State != nullptr);
-			checkInterruptPins();
+			CheckInterruptPins();
 			State = std::invoke(State, this);
 		}
 
 		// Disassemble the opcode at addr
-		std::string disasmOp(uint16_t addr, bool full_line)
+		std::string DisasmOp(uint16_t addr, bool full_line)
 		{
-			return disasmStep(addr, full_line);
+			return DisasmStep(addr, full_line);
 		}
 
 		// Disassemble the opcode at addr, and advance addr to the next opcode
-		std::string disasmStep(uint16_t &addr, bool full_line)
+		std::string DisasmStep(uint16_t &addr, bool full_line)
 		{
 			// I wanted to play with std::format, but it doesn't exist
 			// in the standard library yet, so back to the C library I go.
 			char buffer[48];
-			uint8_t opbyte[4] = { readNoSideEffectsIfPossible(addr) };
+			uint8_t opbyte[4] = { ReadNoSideEffectsIfPossible(addr) };
 			const auto &base = Opc6502[opbyte[0]];
 			const auto &info = ModeTable[static_cast<int>(base.Mode)];
 			unsigned operand = 0;
@@ -290,9 +290,9 @@ namespace m65xx {
 
 			// Get operand bytes
 			if (info.OperandBytes >= 1) {
-				operand = opbyte[1] = readNoSideEffectsIfPossible(addr + 1);
+				operand = opbyte[1] = ReadNoSideEffectsIfPossible(addr + 1);
 				if (info.OperandBytes > 1) {
-					opbyte[2] = readNoSideEffectsIfPossible(addr + 2);
+					opbyte[2] = ReadNoSideEffectsIfPossible(addr + 2);
 					operand |= opbyte[2] << 8;
 				}
 			}
@@ -400,7 +400,7 @@ namespace m65xx {
 		bool InterruptGen = false;
 
 		// Helper functions to access optional pins on the bus
-		[[nodiscard]] constexpr bool checkRDY() const
+		[[nodiscard]] constexpr bool CheckRDY() const
 		{
 			if constexpr (HasGetRDY<T>) {
 				return Bus->getRDY();
@@ -409,40 +409,40 @@ namespace m65xx {
 				return true;
 			}
 		}
-		[[nodiscard]] constexpr bool checkIRQB() const
+		[[nodiscard]] constexpr bool CheckIRQB() const
 		{
 			if constexpr (HasGetIRQB<T>) {
-				return Bus->getIRQB();
+				return Bus->GetIRQB();
 			}
 			else {
 				return true;
 			}
 		}
-		[[nodiscard]] constexpr bool checkNMIB() const
+		[[nodiscard]] constexpr bool CheckNMIB() const
 		{
 			if constexpr (HasGetNMIB<T>) {
-				return Bus->getNMIB();
+				return Bus->GetNMIB();
 			}
 			else {
 				return true;
 			}
 		}
-		[[nodiscard]] constexpr bool checkRESB() const
+		[[nodiscard]] constexpr bool CheckRESB() const
 		{
 			if constexpr (HasGetRESB<T>) {
-				return Bus->getRESB();
+				return Bus->GetRESB();
 			}
 			else {
 				return true;
 			}
 		}
-		[[nodiscard]] uint8_t readNoSideEffectsIfPossible(uint16_t addr)
+		[[nodiscard]] uint8_t ReadNoSideEffectsIfPossible(uint16_t addr)
 		{
 			if constexpr (HasReadNoSideEffects<T>) {
-				return Bus->readNoSideEffects(addr);
+				return Bus->ReadNoSideEffects(addr);
 			}
 			else {
-				return Bus->readAddr(addr);
+				return Bus->ReadAddr(addr);
 			}
 		}
 
@@ -461,10 +461,10 @@ namespace m65xx {
 		ExecPtr State = &type::execBreak_T2;
 		op BaseOp = op::RESET;
 
-		[[nodiscard]] ExecPtrRet nextInstr()
+		[[nodiscard]] ExecPtrRet NextInstr()
 		{
 			if (InterruptGen) {
-				Bus->readAddr(PC);	// Dummy read of pre-injection opcode
+				Bus->ReadAddr(PC);	// Dummy read of pre-injection opcode
 				BaseOp = NmiPending ? op::NMI : op::IRQ;
 				return ModeExec[static_cast<int>(am::brk)];
 			}
@@ -472,10 +472,10 @@ namespace m65xx {
 				// The sync handler (if present) is passed this CPU instance and the
 				// address of the instruction about to be fetched.
 				if constexpr (HasSyncHandler<T, M6502>) {
-					Bus->syncHandler(*this, PC);
+					Bus->SyncHandler(*this, PC);
 				}
 
-				auto op = Bus->readAddr(PC++);
+				auto op = Bus->ReadAddr(PC++);
 				const BaseOpcode &base = Opc6502[op];
 				BaseOp = base.Op;
 
@@ -487,7 +487,7 @@ namespace m65xx {
 				// byte after the opcode.
 				if constexpr (trap_code >= 0) {
 					if (op == trap_code) {
-						if (Bus->trap(*this, PC - 1)) {
+						if (Bus->Trap(*this, PC - 1)) {
 							return &type::execFetch_T1;
 						}
 					}
@@ -498,14 +498,14 @@ namespace m65xx {
 
 		// Check the interrupt pins and update state accordingly. For reference:
 		// http://visual6502.org/wiki/index.php?title=6502_Interrupt_Recognition_Stages_and_Tolerances
-		constexpr void checkInterruptPins()
+		constexpr void CheckInterruptPins()
 		{
 			// When IRQ changes, that change will be reflected in IRQP in the next
 			// cycle. If IRQP is high during T0, then INTG will go high, causing the
 			// next cycle (T1) to substitute BRK for the instruction, but only if
 			// the interrupt disable bit is clear.
 			IrqPending = NextIrqPending;
-			NextIrqPending = !checkIRQB();
+			NextIrqPending = !CheckIRQB();
 
 			// NMI triggers when the NMIB line goes from high to low. Unlike IRQB,
 			// it does not need to still be low when T0 is reached to be serviced.
@@ -515,16 +515,16 @@ namespace m65xx {
 			// processor explicitly blocks reading of the NMIB line during these
 			// cycles to avoid a mixed vector read for both IRQ and NMI (optionally
 			// emulated via the EmulateNMIBRKBug flag).
-			NmiMemory = (NmiMemory << 1) | static_cast<decltype(NmiMemory)>(checkNMIB());
+			NmiMemory = (NmiMemory << 1) | static_cast<decltype(NmiMemory)>(CheckNMIB());
 
 			// If NMI was high 2 cycles ago but low in the previous cycle, the next
-			// call to intCheckT0() should trigger an NMI.
+			// call to IntCheckT0() should trigger an NMI.
 			NmiPending |= ((NmiMemory & 6) == 4);
 		}
 
 		// For all T0 and also T2 of branches, check if the next instruction fetch
 		// should substitute a BRK.
-		constexpr void intCheckT0()
+		constexpr void IntCheckT0()
 		{
 			if (NmiPending || (!P.getI() && IrqPending)) {
 				InterruptGen = true;
@@ -542,8 +542,8 @@ namespace m65xx {
 
 		ExecPtrRet execImplicit_T02()	// Dummy read of nonexistant operand
 		{
-			Bus->readAddr(PC);
-			intCheckT0();
+			Bus->ReadAddr(PC);
+			IntCheckT0();
 			return &type::execCommon_T1;
 		}
 
@@ -551,14 +551,14 @@ namespace m65xx {
 
 		ExecPtrRet execAccumulator_T02() // Dummy read while the ALU does its thing
 		{
-			Bus->readAddr(PC);
-			intCheckT0();
+			Bus->ReadAddr(PC);
+			IntCheckT0();
 			return &type::execAccumulator_T1;
 		}
 		ExecPtrRet execAccumulator_T1()	// Perform operation + fetch next instruction
 		{
 			A = std::invoke(DoOp[static_cast<int>(BaseOp)], this, A);
-			return nextInstr();
+			return NextInstr();
 		}
 
 
@@ -569,22 +569,22 @@ namespace m65xx {
 
 		ExecPtrRet execCommon_T0()		// Read operand
 		{
-			TempData = Bus->readAddr(TempAddr);
-			intCheckT0();
+			TempData = Bus->ReadAddr(TempAddr);
+			IntCheckT0();
 			return &type::execCommon_T1;
 		}
 		ExecPtrRet execCommon_T1()		// Perform operation + fetch next instruction
 		{
 			std::invoke(DoOp[static_cast<int>(BaseOp)], this, TempData);
-			return nextInstr();
+			return NextInstr();
 		}
 
 		// Immediate   #$00 =============================================== 2 cycles
 
 		ExecPtrRet execImmediate_T02()	// Read operand
 		{
-			TempData = Bus->readAddr(PC++);
-			intCheckT0();
+			TempData = Bus->ReadAddr(PC++);
+			IntCheckT0();
 			return &type::execCommon_T1;
 		}
 
@@ -592,7 +592,7 @@ namespace m65xx {
 
 		ExecPtrRet execZP_T2()			// Fetch effective address
 		{
-			TempAddr = Bus->readAddr(PC++);
+			TempAddr = Bus->ReadAddr(PC++);
 			return &type::execCommon_T0;
 		}
 
@@ -600,12 +600,12 @@ namespace m65xx {
 
 		ExecPtrRet execAbs_T2()			// Fetch low byte of effective address
 		{
-			TempAddr = Bus->readAddr(PC++);
+			TempAddr = Bus->ReadAddr(PC++);
 			return &type::execAbs_T3;
 		}
 		ExecPtrRet execAbs_T3()			// Fetch high byte of effective address
 		{
-			TempAddr |= Bus->readAddr(PC++) << 8;
+			TempAddr |= Bus->ReadAddr(PC++) << 8;
 			return &type::execCommon_T0;
 		}
 
@@ -613,23 +613,23 @@ namespace m65xx {
 
 		ExecPtrRet execIZPX_T2()		// Fetch ZP base address
 		{
-			TempData = Bus->readAddr(PC++);
+			TempData = Bus->ReadAddr(PC++);
 			return &type::execIZPX_T3;
 		}
 		ExecPtrRet execIZPX_T3()		// Dummy fetch while add happens
 		{
-			Bus->readAddr(TempData);
+			Bus->ReadAddr(TempData);
 			TempData += X;
 			return &type::execIZPX_T4;
 		}
 		ExecPtrRet execIZPX_T4()		// Fetch low byte of effective address
 		{
-			TempAddr = Bus->readAddr(TempData);
+			TempAddr = Bus->ReadAddr(TempData);
 			return &type::execIZPX_T5;
 		}
 		ExecPtrRet execIZPX_T5()		// Fetch high byte of effective address
 		{
-			TempAddr |= Bus->readAddr((TempData + 1) & 0xFF) << 8;
+			TempAddr |= Bus->ReadAddr((TempData + 1) & 0xFF) << 8;
 			return &type::execCommon_T0;
 		}
 
@@ -637,13 +637,13 @@ namespace m65xx {
 
 		ExecPtrRet execAbsX_T2()		// Fetch low byte of base address
 		{
-			TempAddr = Bus->readAddr(PC++);
+			TempAddr = Bus->ReadAddr(PC++);
 			TempData = X;
 			return &type::execAbsXY_T3;
 		}
 		ExecPtrRet execAbsXY_T3()		// Fetch high byte of base address
 		{
-			TempAddr |= Bus->readAddr(PC++) << 8;
+			TempAddr |= Bus->ReadAddr(PC++) << 8;
 			uint8_t pre_hi = TempAddr >> 8;
 			TempAddr += TempData;		// T2 stored X or Y in TempData for us
 			TempData = pre_hi;
@@ -651,7 +651,7 @@ namespace m65xx {
 		}
 		ExecPtrRet execAbsXY_T4()		// Dummy read while performing carry
 		{
-			Bus->readAddr((TempData << 8) | (TempAddr & 0x00FF));
+			Bus->ReadAddr((TempData << 8) | (TempAddr & 0x00FF));
 			return &type::execCommon_T0;
 		}
 
@@ -659,7 +659,7 @@ namespace m65xx {
 
 		ExecPtrRet execAbsY_T2()		// Fetch low byte of base address
 		{
-			TempAddr = Bus->readAddr(PC++);
+			TempAddr = Bus->ReadAddr(PC++);
 			TempData = Y;
 			return &type::execAbsXY_T3;
 		}
@@ -668,12 +668,12 @@ namespace m65xx {
 
 		ExecPtrRet execZPX_T2()			// Fetch base address
 		{
-			TempAddr = Bus->readAddr(PC++);
+			TempAddr = Bus->ReadAddr(PC++);
 			return &type::execZPX_T3;
 		}
 		ExecPtrRet execZPX_T3()			// Dummy read while performing add
 		{
-			Bus->readAddr(TempAddr);
+			Bus->ReadAddr(TempAddr);
 			TempAddr = (TempAddr + X) & 0x00FF;
 			return &type::execCommon_T0;
 		}
@@ -682,12 +682,12 @@ namespace m65xx {
 
 		ExecPtrRet execZPY_T2()			// Fetch base address
 		{
-			TempAddr = Bus->readAddr(PC++);
+			TempAddr = Bus->ReadAddr(PC++);
 			return &type::execZPY_T3;
 		}
 		ExecPtrRet execZPY_T3()			// Dummy read while performing add
 		{
-			Bus->readAddr(TempAddr);
+			Bus->ReadAddr(TempAddr);
 			TempAddr = (TempAddr + Y) & 0x00FF;
 			return &type::execCommon_T0;
 		}
@@ -696,17 +696,17 @@ namespace m65xx {
 
 		ExecPtrRet execIZPY_T2()		// Fetch indirect address
 		{
-			TempData = Bus->readAddr(PC++);
+			TempData = Bus->ReadAddr(PC++);
 			return &type::execIZPY_T3;
 		}
 		ExecPtrRet execIZPY_T3()		// Fetch low byte of base address
 		{
-			TempAddr = Bus->readAddr(TempData);
+			TempAddr = Bus->ReadAddr(TempData);
 			return &type::execIZPY_T4;
 		}
 		ExecPtrRet execIZPY_T4()		// Fetch high byte of base address
 		{
-			TempAddr |= Bus->readAddr((TempData + 1) & 0x00FF) << 8;
+			TempAddr |= Bus->ReadAddr((TempData + 1) & 0x00FF) << 8;
 			TempData = TempAddr >> 8;
 			TempAddr += Y;
 			return (TempAddr >> 8) != TempData ? &type::execAbsXY_T4 : &type::execCommon_T0;
@@ -721,22 +721,22 @@ namespace m65xx {
 		ExecPtrRet execCommon_Sto_T0()	// Write register/modified data to memory
 		{
 			// AHX/SHX/SHY/TAS can potentially change the target address, so
-			// the operator must be invoked separately from the writeAddr call.
+			// the operator must be invoked separately from the WriteAddr call.
 			uint8_t output = std::invoke(DoOp[static_cast<int>(BaseOp)], this, TempData);
-			Bus->writeAddr(TempAddr, output);
-			intCheckT0();
+			Bus->WriteAddr(TempAddr, output);
+			IntCheckT0();
 			return &type::execFetch_T1;
 		}
 		ExecPtrRet execFetch_T1()	// Fetch next instruction
 		{
-			return nextInstr();
+			return NextInstr();
 		}
 
 		// Zero page   STx $00 ============================================ 3 cycles
 
 		ExecPtrRet execZP_Sto_T2()		// Fetch effective address
 		{
-			TempAddr = Bus->readAddr(PC++);
+			TempAddr = Bus->ReadAddr(PC++);
 			return &type::execCommon_Sto_T0;
 		}
 
@@ -744,12 +744,12 @@ namespace m65xx {
 
 		ExecPtrRet execAbs_Sto_T2()		// Fetch low byte of effective address
 		{
-			TempAddr = Bus->readAddr(PC++);
+			TempAddr = Bus->ReadAddr(PC++);
 			return &type::execAbs_Sto_T3;
 		}
 		ExecPtrRet execAbs_Sto_T3()		// Fetch high byte of effective address
 		{
-			TempAddr |= Bus->readAddr(PC++) << 8;
+			TempAddr |= Bus->ReadAddr(PC++) << 8;
 			return &type::execCommon_Sto_T0;
 		}
 
@@ -757,23 +757,23 @@ namespace m65xx {
 
 		ExecPtrRet execIZPX_Sto_T2()	// Fetch ZP base address
 		{
-			TempData = Bus->readAddr(PC++);
+			TempData = Bus->ReadAddr(PC++);
 			return &type::execIZPX_Sto_T3;
 		}
 		ExecPtrRet execIZPX_Sto_T3()	// Dummy fetch while add happens
 		{
-			Bus->readAddr(TempData);
+			Bus->ReadAddr(TempData);
 			TempData += X;
 			return &type::execIZPX_Sto_T4;
 		}
 		ExecPtrRet execIZPX_Sto_T4()	// Fetch low byte of effective address
 		{
-			TempAddr = Bus->readAddr(TempData);
+			TempAddr = Bus->ReadAddr(TempData);
 			return &type::execIZPX_Sto_T5;
 		}
 		ExecPtrRet execIZPX_Sto_T5()	// Fetch high byte of effective address
 		{
-			TempAddr |= Bus->readAddr((TempData + 1) & 0xFF) << 8;
+			TempAddr |= Bus->ReadAddr((TempData + 1) & 0xFF) << 8;
 			return &type::execCommon_Sto_T0;
 		}
 
@@ -781,19 +781,19 @@ namespace m65xx {
 
 		ExecPtrRet execAbsX_Sto_T2()	// Fetch low byte of base address
 		{
-			TempAddr = Bus->readAddr(PC++);
+			TempAddr = Bus->ReadAddr(PC++);
 			return &type::execAbsX_Sto_T3;
 		}
 		ExecPtrRet execAbsX_Sto_T3()	// Fetch high byte of base address
 		{
-			TempAddr |= Bus->readAddr(PC++) << 8;
+			TempAddr |= Bus->ReadAddr(PC++) << 8;
 			return &type::execAbsX_Sto_T4;
 		}
 		ExecPtrRet execAbsX_Sto_T4()	// Dummy read, maybe performing carry
 		{
 			uint16_t pre_hi = TempAddr & 0xFF00;
 			TempAddr += X;
-			Bus->readAddr(pre_hi | (TempAddr & 0x00FF));
+			Bus->ReadAddr(pre_hi | (TempAddr & 0x00FF));
 			TempData = uint8_t(pre_hi >> 8);	// Record for AHX/SHX/SHY/TAS
 			return &type::execCommon_Sto_T0;
 		}
@@ -802,19 +802,19 @@ namespace m65xx {
 
 		ExecPtrRet execAbsY_Sto_T2()	// Fetch low byte of base address
 		{
-			TempAddr = Bus->readAddr(PC++);
+			TempAddr = Bus->ReadAddr(PC++);
 			return &type::execAbsY_Sto_T3;
 		}
 		ExecPtrRet execAbsY_Sto_T3()	// Fetch high byte of base address
 		{
-			TempAddr |= Bus->readAddr(PC++) << 8;
+			TempAddr |= Bus->ReadAddr(PC++) << 8;
 			return &type::execAbsY_Sto_T4;
 		}
 		ExecPtrRet execAbsY_Sto_T4()	// Dummy read, maybe performing carry
 		{
 			uint16_t pre_hi = TempAddr & 0xFF00;
 			TempAddr += Y;
-			Bus->readAddr(pre_hi | (TempAddr & 0x00FF));
+			Bus->ReadAddr(pre_hi | (TempAddr & 0x00FF));
 			TempData = uint8_t(pre_hi >> 8);	// Record for AHX/SHX/SHY/TAS
 			return &type::execCommon_Sto_T0;
 		}
@@ -823,12 +823,12 @@ namespace m65xx {
 
 		ExecPtrRet execZPX_Sto_T2()		// Fetch base address
 		{
-			TempAddr = Bus->readAddr(PC++);
+			TempAddr = Bus->ReadAddr(PC++);
 			return &type::execZPX_Sto_T3;
 		}
 		ExecPtrRet execZPX_Sto_T3()		// Dummy read while performing add
 		{
-			Bus->readAddr(TempAddr);
+			Bus->ReadAddr(TempAddr);
 			TempAddr = (TempAddr + X) & 0x00FF;
 			return &type::execCommon_Sto_T0;
 		}
@@ -837,12 +837,12 @@ namespace m65xx {
 
 		ExecPtrRet execZPY_Sto_T2()		// Fetch base address
 		{
-			TempAddr = Bus->readAddr(PC++);
+			TempAddr = Bus->ReadAddr(PC++);
 			return &type::execZPY_Sto_T3;
 		}
 		ExecPtrRet execZPY_Sto_T3()		// Dummy read while performing add
 		{
-			Bus->readAddr(TempAddr);
+			Bus->ReadAddr(TempAddr);
 			TempAddr = (TempAddr + Y) & 0x00FF;
 			return &type::execCommon_Sto_T0;
 		}
@@ -851,17 +851,17 @@ namespace m65xx {
 
 		ExecPtrRet execIZPY_Sto_T2()	// Fetch indirect address
 		{
-			TempData = Bus->readAddr(PC++);
+			TempData = Bus->ReadAddr(PC++);
 			return &type::execIZPY_Sto_T3;
 		}
 		ExecPtrRet execIZPY_Sto_T3()	// Fetch low byte of base address
 		{
-			TempAddr = Bus->readAddr(TempData);
+			TempAddr = Bus->ReadAddr(TempData);
 			return &type::execIZPY_Sto_T4;
 		}
 		ExecPtrRet execIZPY_Sto_T4()	// Fetch high byte of base address
 		{
-			TempAddr |= Bus->readAddr((TempData + 1) & 0xFF) << 8;
+			TempAddr |= Bus->ReadAddr((TempData + 1) & 0xFF) << 8;
 			return &type::execAbsY_Sto_T4;
 		}
 
@@ -873,12 +873,12 @@ namespace m65xx {
 
 		ExecPtrRet execCommon_RMW_SD1()	// Fetch data
 		{
-			TempData = Bus->readAddr(TempAddr);
+			TempData = Bus->ReadAddr(TempAddr);
 			return &type::execCommon_RMW_SD2;
 		}
 		ExecPtrRet execCommon_RMW_SD2()	// Dummy write
 		{
-			Bus->writeAddr(TempAddr, TempData);
+			Bus->WriteAddr(TempAddr, TempData);
 			return &type::execCommon_Sto_T0;
 		}
 
@@ -886,7 +886,7 @@ namespace m65xx {
 
 		ExecPtrRet execZP_RMW_T2()		// Fetch effective address
 		{
-			TempAddr = Bus->readAddr(PC++);
+			TempAddr = Bus->ReadAddr(PC++);
 			return &type::execCommon_RMW_SD1;
 		}
 
@@ -894,12 +894,12 @@ namespace m65xx {
 
 		ExecPtrRet execAbs_RMW_T2()		// Fetch low byte of effective address
 		{
-			TempAddr = Bus->readAddr(PC++);
+			TempAddr = Bus->ReadAddr(PC++);
 			return &type::execAbs_RMW_T3;
 		}
 		ExecPtrRet execAbs_RMW_T3()		// Fetch high byte of effective address
 		{
-			TempAddr |= Bus->readAddr(PC++) << 8;
+			TempAddr |= Bus->ReadAddr(PC++) << 8;
 			return &type::execCommon_RMW_SD1;
 		}
 
@@ -907,12 +907,12 @@ namespace m65xx {
 
 		ExecPtrRet execZPX_RMW_T2()		// Fetch base address
 		{
-			TempAddr = Bus->readAddr(PC++);
+			TempAddr = Bus->ReadAddr(PC++);
 			return &type::execZPX_RMW_T3;
 		}
 		ExecPtrRet execZPX_RMW_T3()		// Dummy read while performing add
 		{
-			Bus->readAddr(TempAddr);
+			Bus->ReadAddr(TempAddr);
 			TempAddr = (TempAddr + X) & 0xFF;
 			return &type::execCommon_RMW_SD1;
 		}
@@ -921,19 +921,19 @@ namespace m65xx {
 
 		ExecPtrRet execAbsX_RMW_T2()	// Fetch low byte of base address
 		{
-			TempAddr = Bus->readAddr(PC++);
+			TempAddr = Bus->ReadAddr(PC++);
 			return &type::execAbsX_RMW_T3;
 		}
 		ExecPtrRet execAbsX_RMW_T3()	// Fetch high byte of base address
 		{
-			TempAddr |= Bus->readAddr(PC++) << 8;
+			TempAddr |= Bus->ReadAddr(PC++) << 8;
 			return &type::execAbsX_RMW_T4;
 		}
 		ExecPtrRet execAbsX_RMW_T4()	// Dummy read, maybe performing carry
 		{
 			uint16_t pre_hi = TempAddr & 0xFF00;
 			TempAddr += X;
-			Bus->readAddr(pre_hi | (TempAddr & 0x00FF));
+			Bus->ReadAddr(pre_hi | (TempAddr & 0x00FF));
 			return &type::execCommon_RMW_SD1;
 		}
 
@@ -941,19 +941,19 @@ namespace m65xx {
 
 		ExecPtrRet execAbsY_RMW_T2()	// Fetch low byte of base address
 		{
-			TempAddr = Bus->readAddr(PC++);
+			TempAddr = Bus->ReadAddr(PC++);
 			return &type::execAbsY_RMW_T3;
 		}
 		ExecPtrRet execAbsY_RMW_T3()	// Fetch high byte of base address
 		{
-			TempAddr |= Bus->readAddr(PC++) << 8;
+			TempAddr |= Bus->ReadAddr(PC++) << 8;
 			return &type::execAbsY_RMW_T4;
 		}
 		ExecPtrRet execAbsY_RMW_T4()	// Dummy read, maybe performing carry
 		{
 			uint16_t pre_hi = TempAddr & 0xFF00;
 			TempAddr += Y;
-			Bus->readAddr(pre_hi | (TempAddr & 0x00FF));
+			Bus->ReadAddr(pre_hi | (TempAddr & 0x00FF));
 			return &type::execCommon_RMW_SD1;
 		}
 
@@ -961,23 +961,23 @@ namespace m65xx {
 
 		ExecPtrRet execIZPX_RMW_T2()	// Fetch ZP base address
 		{
-			TempData = Bus->readAddr(PC++);
+			TempData = Bus->ReadAddr(PC++);
 			return &type::execIZPX_RMW_T3;
 		}
 		ExecPtrRet execIZPX_RMW_T3()	// Dummy fetch while add happens
 		{
-			Bus->readAddr(TempData);
+			Bus->ReadAddr(TempData);
 			TempData += X;
 			return &type::execIZPX_RMW_T4;
 		}
 		ExecPtrRet execIZPX_RMW_T4()	// Fetch low byte of effective address
 		{
-			TempAddr = Bus->readAddr(TempData);
+			TempAddr = Bus->ReadAddr(TempData);
 			return &type::execIZPX_RMW_T5;
 		}
 		ExecPtrRet execIZPX_RMW_T5()	// Fetch high byte of effective address
 		{
-			TempAddr |= Bus->readAddr((TempData + 1) & 0xFF) << 8;
+			TempAddr |= Bus->ReadAddr((TempData + 1) & 0xFF) << 8;
 			return &type::execCommon_RMW_SD1;
 		}
 
@@ -985,17 +985,17 @@ namespace m65xx {
 
 		ExecPtrRet execIZPY_RMW_T2()	// Fetch indirect address
 		{
-			TempData = Bus->readAddr(PC++);
+			TempData = Bus->ReadAddr(PC++);
 			return &type::execIZPY_RMW_T3;
 		}
 		ExecPtrRet execIZPY_RMW_T3()	// Fetch low byte of base address
 		{
-			TempAddr = Bus->readAddr(TempData);
+			TempAddr = Bus->ReadAddr(TempData);
 			return &type::execIZPY_RMW_T4;
 		}
 		ExecPtrRet execIZPY_RMW_T4()	// Fetch high byte of base address
 		{
-			TempAddr |= Bus->readAddr((TempData + 1) & 0xFF) << 8;
+			TempAddr |= Bus->ReadAddr((TempData + 1) & 0xFF) << 8;
 			return &type::execAbsY_RMW_T4;
 		}
 
@@ -1007,14 +1007,14 @@ namespace m65xx {
 
 		ExecPtrRet execPush_T2()		// Dummy read
 		{
-			Bus->readAddr(PC);
+			Bus->ReadAddr(PC);
 			return &type::execPush_T0;
 		}
 		ExecPtrRet execPush_T0()		// Write register to stack
 		{
-			Bus->writeAddr(STACK_PAGE | SP, std::invoke(DoOp[static_cast<int>(BaseOp)], this, 0));
+			Bus->WriteAddr(STACK_PAGE | SP, std::invoke(DoOp[static_cast<int>(BaseOp)], this, 0));
 			--SP;
-			intCheckT0();
+			IntCheckT0();
 			return &type::execFetch_T1;
 		}
 
@@ -1022,19 +1022,19 @@ namespace m65xx {
 
 		ExecPtrRet execPull_T2()		// Dummy read from PC+1
 		{
-			Bus->readAddr(PC);
+			Bus->ReadAddr(PC);
 			return &type::execPull_T3;
 		}
 		ExecPtrRet execPull_T3()		// Dummy read from SP
 		{
-			Bus->readAddr(STACK_PAGE | SP);
+			Bus->ReadAddr(STACK_PAGE | SP);
 			++SP;
 			return &type::execPull_T0;
 		}
 		ExecPtrRet execPull_T0()		// Fetch data from stack
 		{
-			TempData = Bus->readAddr(STACK_PAGE | SP);
-			intCheckT0();
+			TempData = Bus->ReadAddr(STACK_PAGE | SP);
+			IntCheckT0();
 			return &type::execCommon_T1;
 		}
 
@@ -1042,77 +1042,77 @@ namespace m65xx {
 
 		ExecPtrRet execJump_T2()		// Fetch low byte of target address
 		{
-			TempAddr = Bus->readAddr(PC++);
+			TempAddr = Bus->ReadAddr(PC++);
 			return &type::execJump_T0;
 		}
 		ExecPtrRet execJump_T0()		// Fetch high byte of target address
 		{
-			TempAddr |= Bus->readAddr(PC) << 8;
-			intCheckT0();
+			TempAddr |= Bus->ReadAddr(PC) << 8;
+			IntCheckT0();
 			return &type::execJump_T1;
 		}
 		ExecPtrRet execJump_T1()		// Fetch next instruction
 		{
 			PC = TempAddr;
-			return nextInstr();
+			return NextInstr();
 		}
 
 		// Jump Indirect   JMP ($0000) ==================================== 5 cycles
 
 		ExecPtrRet execJumpInd_T2()		// Fetch low byte of indirect address
 		{
-			TempAddr = Bus->readAddr(PC++);
+			TempAddr = Bus->ReadAddr(PC++);
 			return &type::execJumpInd_T3;
 		}
 		ExecPtrRet execJumpInd_T3()		// Fetch high byte of indirect address
 		{
-			TempAddr |= Bus->readAddr(PC++) << 8;
+			TempAddr |= Bus->ReadAddr(PC++) << 8;
 			return &type::execJumpInd_T4;
 		}
 		ExecPtrRet execJumpInd_T4()		// Fetch low byte of target address
 		{
-			TempData = Bus->readAddr(TempAddr);
+			TempData = Bus->ReadAddr(TempAddr);
 			return &type::execJumpInd_T0;
 		}
 		ExecPtrRet execJumpInd_T0()		// Fetch high byte of target address
 		{
 			// On the NMOS 6502, a page boundary is not crossed here
 			uint16_t addr = (TempAddr & 0xFF00) | ((TempAddr + 1) & 0x00FF);
-			PC = TempData | (Bus->readAddr(addr) << 8);
-			intCheckT0();
+			PC = TempData | (Bus->ReadAddr(addr) << 8);
+			IntCheckT0();
 			return &type::execJumpInd_T1;
 		}
 		ExecPtrRet execJumpInd_T1()		// Fetch next instruction
 		{
-			return nextInstr();
+			return NextInstr();
 		}
 
 		// Jump to Subroution   JSR $0000 ================================= 6 cycles
 
 		ExecPtrRet execCall_T2()		// Fetch low byte of target address
 		{
-			TempAddr = Bus->readAddr(PC++);
+			TempAddr = Bus->ReadAddr(PC++);
 			return &type::execCall_T3;
 		}
 		ExecPtrRet execCall_T3()		// Dummy read from stack
 		{
-			Bus->readAddr(STACK_PAGE | SP);
+			Bus->ReadAddr(STACK_PAGE | SP);
 			return &type::execCall_T4;
 		}
 		ExecPtrRet execCall_T4()		// Push high byte of PC
 		{
-			Bus->writeAddr(STACK_PAGE | SP--, PC >> 8);
+			Bus->WriteAddr(STACK_PAGE | SP--, PC >> 8);
 			return &type::execCall_T5;
 		}
 		ExecPtrRet execCall_T5()		// Push low byte of PC
 		{
-			Bus->writeAddr(STACK_PAGE | SP--, PC & 0xFF);
+			Bus->WriteAddr(STACK_PAGE | SP--, PC & 0xFF);
 			return &type::execCall_T0;
 		}
 		ExecPtrRet execCall_T0()		// Fetch high byte of target address
 		{
-			TempAddr |= Bus->readAddr(PC) << 8;
-			intCheckT0();
+			TempAddr |= Bus->ReadAddr(PC) << 8;
+			IntCheckT0();
 			return &type::execJump_T1;
 		}
 
@@ -1120,29 +1120,29 @@ namespace m65xx {
 
 		ExecPtrRet execRTS_T2()			// Dummy read of byte after opcode
 		{
-			Bus->readAddr(PC);
+			Bus->ReadAddr(PC);
 			return &type::execRTS_T3;
 		}
 		ExecPtrRet execRTS_T3()			// Dummy read from stack
 		{
-			Bus->readAddr(STACK_PAGE | SP);
+			Bus->ReadAddr(STACK_PAGE | SP);
 			return &type::execRTS_T4;
 		}
 		ExecPtrRet execRTS_T4()			// Pull PCL from stack
 		{
-			TempAddr = Bus->readAddr(STACK_PAGE | ++SP);
+			TempAddr = Bus->ReadAddr(STACK_PAGE | ++SP);
 			return &type::execRTS_T5;
 		}
 		ExecPtrRet execRTS_T5()			// Pull PCH from stack
 		{
-			TempAddr |= Bus->readAddr(STACK_PAGE | ++SP) << 8;
+			TempAddr |= Bus->ReadAddr(STACK_PAGE | ++SP) << 8;
 			return &type::execRTS_T0;
 		}
 		ExecPtrRet execRTS_T0()			// Dummy read to increment PC
 		{
 			PC = TempAddr;
-			Bus->readAddr(PC++);
-			intCheckT0();
+			Bus->ReadAddr(PC++);
+			IntCheckT0();
 			return &type::execFetch_T1;
 		}
 
@@ -1160,11 +1160,11 @@ namespace m65xx {
 			// (not two bytes past as would be the case if the sequence continued
 			// and RTI was used to return to this point).
 			if constexpr (HasBreakHandler<T, M6502>) {
-				if (BaseOp == op::BRK && Bus->breakHandler(*this, PC - 1)) {
-					return nextInstr();
+				if (BaseOp == op::BRK && Bus->BreakHandler(*this, PC - 1)) {
+					return NextInstr();
 				}
 			}
-			Bus->readAddr(PC);
+			Bus->ReadAddr(PC);
 			// Software break increments PC; Hardware break does not
 			if (BaseOp == op::BRK) {
 				++PC;
@@ -1175,9 +1175,9 @@ namespace m65xx {
 		{
 			const uint16_t addr = STACK_PAGE | SP--;
 			if (BaseOp != op::RESET) {
-				Bus->writeAddr(addr, PC >> 8);
+				Bus->WriteAddr(addr, PC >> 8);
 			} else {
-				Bus->readAddr(addr);
+				Bus->ReadAddr(addr);
 			}
 			return &type::execBreak_T4;
 		}
@@ -1185,9 +1185,9 @@ namespace m65xx {
 		{
 			const uint16_t addr = STACK_PAGE | SP--;
 			if (BaseOp != op::RESET) {
-				Bus->writeAddr(addr, PC & 0xFF);
+				Bus->WriteAddr(addr, PC & 0xFF);
 			} else {
-				Bus->readAddr(addr);
+				Bus->ReadAddr(addr);
 			}
 			return &type::execBreak_T5;
 		}
@@ -1199,9 +1199,9 @@ namespace m65xx {
 				if (BaseOp != op::BRK) {
 					status &= ~0x10;	// HW interrupts force the BRK flag to 0
 				}
-				Bus->writeAddr(addr, status);
+				Bus->WriteAddr(addr, status);
 			} else {
-				Bus->readAddr(addr);
+				Bus->ReadAddr(addr);
 			}
 
 			if (EmulateNMIBRKBug) {
@@ -1218,7 +1218,7 @@ namespace m65xx {
 		{
 			InterruptGen = false;
 			P.setI(true);
-			TempAddr = Bus->readAddr(opToVector(BaseOp));
+			TempAddr = Bus->ReadAddr(opToVector(BaseOp));
 
 			if (EmulateNMIBRKBug) {
 				// Copy bit 1 to bit 0 to prevent NMI detection during vector fetch
@@ -1228,11 +1228,11 @@ namespace m65xx {
 		}
 		ExecPtrRet execBreak_T0()		// Fetch high order byte of interrupt vector
 		{
-			PC = TempAddr | (Bus->readAddr(opToVector(BaseOp) + 1) << 8);
+			PC = TempAddr | (Bus->ReadAddr(opToVector(BaseOp) + 1) << 8);
 			if (BaseOp == op::NMI) {
 				NmiPending = false;
 			}
-			intCheckT0();
+			IntCheckT0();
 			return &type::execFetch_T1;
 		}
 
@@ -1240,28 +1240,28 @@ namespace m65xx {
 
 		ExecPtrRet execRTI_T2()			// Dummy fetch of PC+1
 		{
-			Bus->readAddr(PC);
+			Bus->ReadAddr(PC);
 			return &type::execRTI_T3;
 		}
 		ExecPtrRet execRTI_T3()			// Dummy fetch from stack
 		{
-			Bus->readAddr(STACK_PAGE | SP++);
+			Bus->ReadAddr(STACK_PAGE | SP++);
 			return &type::execRTI_T4;
 		}
 		ExecPtrRet execRTI_T4()			// Pull P from stack
 		{
-			P = Bus->readAddr(STACK_PAGE | SP++);
+			P = Bus->ReadAddr(STACK_PAGE | SP++);
 			return &type::execRTI_T5;
 		}
 		ExecPtrRet execRTI_T5()			// Pull PCL from stack
 		{
-			TempAddr = Bus->readAddr(STACK_PAGE | SP++);
+			TempAddr = Bus->ReadAddr(STACK_PAGE | SP++);
 			return &type::execRTI_T0;
 		}
 		ExecPtrRet execRTI_T0()			// Pull PCH from stack
 		{
-			PC = TempAddr | (Bus->readAddr(STACK_PAGE | SP) << 8);
-			intCheckT0();
+			PC = TempAddr | (Bus->ReadAddr(STACK_PAGE | SP) << 8);
+			IntCheckT0();
 			return &type::execFetch_T1;
 		}
 
@@ -1269,19 +1269,19 @@ namespace m65xx {
 
 		ExecPtrRet execBranch_T2()	// Read offset
 		{
-			TempData = Bus->readAddr(PC++);
-			intCheckT0();
+			TempData = Bus->ReadAddr(PC++);
+			IntCheckT0();
 			return &type::execBranch_T3;
 		}
 		ExecPtrRet execBranch_T3()	// Check condition
 		{
 			if (!std::invoke(DoOp[static_cast<int>(BaseOp)], this, 0)) {
 				// No branch, so do next instruction
-				return nextInstr();
+				return NextInstr();
 			} else {
 				// Branching, but we still need to read the instruction
 				// that would have been executed if we didn't branch.
-				Bus->readAddr(PC);
+				Bus->ReadAddr(PC);
 				return &type::execBranch_T0;
 			}
 		}
@@ -1291,51 +1291,51 @@ namespace m65xx {
 			if ((newPC ^ PC) & 0xFF00) {
 				// Carry needed, so dummy read from incomplete PC sum
 				PC = (PC & 0xFF00) | (newPC & 0xFF);
-				Bus->readAddr(PC);
+				Bus->ReadAddr(PC);
 				// Complete branch in next cycle
 				TempAddr = newPC;
 				// This cycle behaves as a T0 for interrupt purposes
 				// when the branch crosses a page boundary.
-				intCheckT0();
+				IntCheckT0();
 				return &type::execBranch_T1;
 			}
 			else {
 				// No carry needed, so do real instruction fetch now
 				PC = newPC;
-				return nextInstr();
+				return NextInstr();
 			}
 		}
 		ExecPtrRet execBranch_T1()	// Take branch, carry complete
 		{
 			PC = TempAddr;
-			return nextInstr();
+			return NextInstr();
 		}
 
 		// Halt / Kill ===================================================== Forever
 
 		ExecPtrRet execHalt_T2() // Dummy read of PC+1
 		{
-			Bus->readAddr(PC++);
+			Bus->ReadAddr(PC++);
 			return &type::execHalt_T3;
 		}
 		ExecPtrRet execHalt_T3() // Put $FFFF on the address bus
 		{
-			Bus->readAddr(0xFFFF);
+			Bus->ReadAddr(0xFFFF);
 			return &type::execHalt_T4;
 		}
 		ExecPtrRet execHalt_T4() // Put $FFFE on the address bus
 		{
-			Bus->readAddr(0xFFFE);
+			Bus->ReadAddr(0xFFFE);
 			return &type::execHalt_T5;
 		}
 		ExecPtrRet execHalt_T5() // Put $FFFE on the address bus
 		{
-			Bus->readAddr(0xFFFE);
+			Bus->ReadAddr(0xFFFE);
 			return &type::execHalt_TX;
 		}
 		ExecPtrRet execHalt_TX() // Put $FFFF on the address bus until reset
 		{
-			Bus->readAddr(0xFFFF);
+			Bus->ReadAddr(0xFFFF);
 			return &type::execHalt_TX;
 		}
 
@@ -1910,7 +1910,7 @@ namespace m65xx {
 				// Page boundary was crossed
 				TempAddr &= (uint16_t(value) << 8) | 0xFF;
 			}
-			if (checkRDY()) {
+			if (CheckRDY()) {
 				value &= prehi + 1;
 			}
 			return value;
@@ -1972,7 +1972,7 @@ namespace m65xx {
 		//   A = (A | {CONST}) & X & #imm
 		uint8_t doXAA(uint8_t data)
 		{
-			A = (A | (!checkRDY() ? XAA_MAGIC_RDY : XAA_MAGIC)) & X & data;
+			A = (A | (!CheckRDY() ? XAA_MAGIC_RDY : XAA_MAGIC)) & X & data;
 			P.setNZ(A);
 			return 0;
 		}
