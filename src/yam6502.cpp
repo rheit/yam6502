@@ -1,7 +1,8 @@
 #include "yam6502.h"
-#include <stdint.h>
 #include <array>
 
+// Common data for the 6502 emulation that is always the same no matter how
+// the templated class is instantiated.
 namespace m65xx {
 	const char OpNames[][4] = {
 		"ADC",

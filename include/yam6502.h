@@ -122,7 +122,7 @@ namespace m65xx {
 		AXS,
 		DCP,
 		ISC,
-		KIL,
+		KIL,	// aka JAM/HLT/CIM/CRP
 		LAS,
 		LAX,
 		LAX_IMM,
@@ -144,17 +144,19 @@ namespace m65xx {
 		RESET,
 	};
 
+	// Opcode information for execution
 	struct BaseOpcode {
 		op Op;
 		am Mode;
 	};
 
+	// Opcode information for disassembly
 	struct DisasmInfo {
-		uint8_t OperandBytes;
-		const char Format[11];
+		uint8_t OperandBytes;	// # of bytes of operand data
+		const char Format[11];	// printf specifier for operand
 	};
 
-	extern const char OpNames[static_cast<int>(op::COUNT)][4];
+	extern const char OpNames[static_cast<int>(op::COUNT)][4];	// Operation names for disassembly
 	extern const DisasmInfo ModeTable[static_cast<int>(am::COUNT)];
 	extern const BaseOpcode Opc6502[256];
 
@@ -169,6 +171,20 @@ namespace m65xx {
 		FLAG_N = 0x80
 	};
 
+	// Concepts to check for optional features of the bus
+	//
+	//  Check for processor interrupt pins. Any that the bus does not
+	//  provide a function to read are treated as being held high/true:
+	//   bus->GetRDY()  - return status of RDY line
+	//   bus->GetIRQB() - return status of IRQB line
+	//   bus->GetNMIB() - return status of NMIB line
+	//   bus->GetRESB() - return status of RESB line
+	//
+	//  Opportunities to inject custom behavior:
+	//   bus->SyncHandler() - Called just before an instruction is fetched
+	//   bus->BreakHandler() - Called when the BRK instruction is executed
+	//   bus->ReadNoSideEffects() - Used by the disassembler to read memory. Useful, e.g.,
+	//                              for reading I/O space without triggering I/O actions.
 	template<typename T>
 	concept HasGetRDY = requires (T bus) {
 		{ bus->GetRDY() } -> std::convertible_to<bool>;
@@ -197,15 +213,6 @@ namespace m65xx {
 	concept HasReadNoSideEffects = requires (T bus, uint16_t addr) {
 		{ bus->ReadNoSideEffects(addr) } -> std::convertible_to<uint8_t>;
 	};
-
-	/*
-	template<typename T>
-	concept is_system_bus =
-	requires(T bus, unsigned addr, uint8_t data) {
-		{ bus->ReadAddr(addr) } -> std::same_as<uint8_t>;
-		bus->WriteAddr(addr, data);
-	};
-	*/
 
 	// T = A pointer type to the bus used to read and write.
 	// trapcode = A trap opcode, if nonnegative.
@@ -250,7 +257,7 @@ namespace m65xx {
 		void setPC(uint16_t val) { PC = val; State = &type::execFetch_T1; }
 		void setP(uint8_t val) { P = val; }
 
-		// Do something
+		// Begin the processor's reset sequence.
 		void Reset()
 		{
 			BaseOp = op::RESET;
@@ -261,6 +268,7 @@ namespace m65xx {
 			InterruptGen = false;
 		}
 
+		// Execute one cycle.
 		void Tick()
 		{
 			assert(State != nullptr);
@@ -268,13 +276,13 @@ namespace m65xx {
 			State = std::invoke(State, this);
 		}
 
-		// Disassemble the opcode at addr
+		// Disassemble the opcode at addr.
 		std::string DisasmOp(uint16_t addr, bool full_line)
 		{
 			return DisasmStep(addr, full_line);
 		}
 
-		// Disassemble the opcode at addr, and advance addr to the next opcode
+		// Disassemble the opcode at addr, and advance addr to the next opcode.
 		std::string DisasmStep(uint16_t &addr, bool full_line)
 		{
 			// I wanted to play with std::format, but it doesn't exist
@@ -332,6 +340,9 @@ namespace m65xx {
 			return std::string(buffer, buffpos);
 		}
 
+		// Returns the address of the vector associated with an "operation"
+		// RESET and NMI are treated as operations only to distinguish them
+		// from BRK.
 		[[nodiscard]] constexpr uint16_t opToVector(op operation) const
 		{
 			switch (operation) {
@@ -341,11 +352,13 @@ namespace m65xx {
 			}
 		}
 
-		enum : uint16_t { STACK_PAGE = 0x100 };
+		// Address of the stack page
+		static constexpr inline uint16_t STACK_PAGE = 0x100;
 
 	private:
 		class StatusFlags {
 		public:
+			// Set individual flags.
 			constexpr void setN(uint8_t val) { N = val; }
 			constexpr void setV(uint8_t val) { V = val; }
 			constexpr void setD(bool flag) { if (flag) { DI |= FLAG_D; } else { DI &= ~FLAG_D; } }
@@ -353,7 +366,7 @@ namespace m65xx {
 			constexpr void setZ(bool flag) { Z = flag; }
 			constexpr void setC(bool flag) { C = flag; }
 
-
+			// Set the (N)egative and (Z)ero flag according to the value passed in.
 			constexpr void setNZ(uint8_t from) { setN(from); setZ(!from); }
 
 			[[nodiscard]] constexpr uint8_t getN() const { return N & FLAG_N; }
@@ -363,9 +376,15 @@ namespace m65xx {
 			[[nodiscard]] constexpr bool getZ() const { return Z; }
 			[[nodiscard]] constexpr bool getC() const { return C; }
 
+			// Combine the individual status flags into the unified flag word
+			// exposed by the processor to the outside world. The B flag is always
+			// set because the 6502 always sets it when exposing the processor flags
+			// to code except when pushing it to the stack during the IRQ and NMI sequences.
 			[[nodiscard]] constexpr explicit operator uint8_t() const {
 				return getN() | getV() | FLAG_RESERVED | FLAG_B | DI | (Z << 1) | (uint8_t)C;
 			}
+
+			// Split the combined flag word into separate pieces.
 			constexpr StatusFlags &operator=(uint8_t word) {
 				N = word;
 				V = word;
@@ -376,34 +395,38 @@ namespace m65xx {
 			}
 
 		private:
-			uint8_t N = 0;
-			uint8_t V = 0;
+			uint8_t N = 0;		// All but bit 7 are ignored
+			uint8_t V = 0;		// All but bit 6 are ignored
 			bool Z = false;
 			bool C = false;
-			uint8_t DI = 0;
+			uint8_t DI = 0;		// All but bits 2 and 3 must be zero
 		};
 
+		// The "bus" this processor is connected to.
 		T Bus;
 
-		uint8_t A = 0;
-		uint8_t X = 0;
-		uint8_t Y = 0;
-		uint8_t SP = 0;
-		uint16_t PC = 0;
-		uint16_t TempAddr = 0;
-		uint8_t TempData = 0;
-		StatusFlags P;
-		bool IrqPending = false;
-		bool NextIrqPending = false;
-		bool NmiPending = false;
-		uint8_t NmiMemory = ~0;
-		bool InterruptGen = false;
+		// Processor registers
+		uint8_t A = 0;			// Accumulator
+		uint8_t X = 0;			// X index register
+		uint8_t Y = 0;			// Y index register
+		uint8_t SP = 0;			// Stack Pointer
+		uint16_t PC = 0;		// Program Counter
+		StatusFlags P;			// Processor status flags
+
+		uint16_t TempAddr = 0;	// 16-bit working storage for instruction execution
+		uint8_t TempData = 0;	// 8-bit working storage for instruction execution
+
+		bool IrqPending = false;	// 
+		bool NextIrqPending = false;// Delay IRQ action one cycle.
+		bool NmiPending = false;	// Latched when the NMI line transitions low in the preceding cycle.
+		uint8_t NmiMemory = ~0;		// 8 bits of history for NMI. Bit 0 is most recent state, 7 is oldest.
+		bool InterruptGen = false;	// Substitute BRK for next instruction?
 
 		// Helper functions to access optional pins on the bus
 		[[nodiscard]] constexpr bool CheckRDY() const
 		{
 			if constexpr (HasGetRDY<T>) {
-				return Bus->getRDY();
+				return Bus->GetRDY();
 			}
 			else {
 				return true;
@@ -461,6 +484,7 @@ namespace m65xx {
 		ExecPtr State = &type::execBreak_T2;
 		op BaseOp = op::RESET;
 
+		// Fetch the next instruction and setup to begin executing it on the next cycle.
 		[[nodiscard]] ExecPtrRet NextInstr()
 		{
 			if (InterruptGen) {
@@ -488,6 +512,9 @@ namespace m65xx {
 				if constexpr (trap_code >= 0) {
 					if (op == trap_code) {
 						if (Bus->Trap(*this, PC - 1)) {
+							// Force the next cycle to call NextInstr() again instead
+							// of executing whatever this instruction was supposed to
+							// start executing.
 							return &type::execFetch_T1;
 						}
 					}
@@ -496,7 +523,9 @@ namespace m65xx {
 			}
 		}
 
-		// Check the interrupt pins and update state accordingly. For reference:
+		// Check the interrupt pins and update state accordingly. This is called
+		// by Tick() just before the current state is executed, so happens every
+		// cycle. For reference:
 		// http://visual6502.org/wiki/index.php?title=6502_Interrupt_Recognition_Stages_and_Tolerances
 		constexpr void CheckInterruptPins()
 		{
@@ -522,8 +551,11 @@ namespace m65xx {
 			NmiPending |= ((NmiMemory & 6) == 4);
 		}
 
-		// For all T0 and also T2 of branches, check if the next instruction fetch
-		// should substitute a BRK.
+		// IntCheckT0 checks if the next instruction fetch should substitute a BRK.
+		// It is called mostly from T0 states. The exception is branch statements
+		// which only do this in their T0 if the branch is taken and crosses a page
+		// boundary. Branch instructions are also the only ones to check from their
+		// T2 states, and do so always.
 		constexpr void IntCheckT0()
 		{
 			if (NmiPending || (!P.getI() && IrqPending)) {
@@ -1311,7 +1343,7 @@ namespace m65xx {
 			return NextInstr();
 		}
 
-		// Halt / Kill ===================================================== Forever
+		// Halt / Kill / Jam / Crap ======================================== Forever
 
 		ExecPtrRet execHalt_T2() // Dummy read of PC+1
 		{
@@ -1367,41 +1399,49 @@ namespace m65xx {
 		 *    instructions like DEC and ASL.
 		 */
 
+		// Branch on Carry Clear
 		uint8_t getBCC(uint8_t)
 		{
 			return !P.getC();
 		}
 
+		// Branch on Carry Set
 		uint8_t getBCS(uint8_t)
 		{
 			return P.getC();
 		}
 
+		// Branch on Result not Zero
 		uint8_t getBNE(uint8_t)
 		{
 			return !P.getZ();
 		}
 
+		// Branch on Result Zero
 		uint8_t getBEQ(uint8_t)
 		{
 			return P.getZ();
 		}
 
+		// Branch on Result Plus
 		uint8_t getBPL(uint8_t)
 		{
 			return !P.getN();
 		}
 
+		// Branch on Result Minus
 		uint8_t getBMI(uint8_t)
 		{
 			return P.getN();
 		}
 
+		// Branch on Overflow Clear
 		uint8_t getBVC(uint8_t)
 		{
 			return !P.getV();
 		}
 
+		// Branch on Overflow Set
 		uint8_t getBVS(uint8_t)
 		{
 			return P.getV();
@@ -1415,8 +1455,8 @@ namespace m65xx {
 			// the same sign but the output has a different sign.
 			// In this case, this is expressed as both input bits
 			// are different from the output bit.
-			P.setV(((A ^ added) & (data ^ added)) >> 1);
-			P.setC(bool(added >> 8));
+			P.setV(((A ^ added) & (data ^ added)) >> 1);	// >>1 to get it into bit 6
+			P.setC(static_cast<bool>(added >> 8));
 			P.setNZ(new_a);
 			return new_a;
 		}
@@ -1424,6 +1464,7 @@ namespace m65xx {
 		// Algorithms for decimal mode addition/subtraction are described at
 		// http://www.6502.org/tutorials/decimal_mode.html
 
+		// Add Memory to Accumulator with Carry
 		uint8_t doADC(uint8_t data)
 		{
 			if (!P.getD()) {
@@ -1454,6 +1495,7 @@ namespace m65xx {
 			return 0;
 		}
 
+		// Subtract Memory from Accumulator with Borrow
 		uint8_t doSBC(uint8_t data)
 		{
 			if (!P.getD()) {
@@ -1479,6 +1521,7 @@ namespace m65xx {
 			return 0;
 		}
 
+		// "AND" Memory with Accumulator
 		uint8_t doAND(uint8_t data)
 		{
 			A &= data;
@@ -1486,6 +1529,7 @@ namespace m65xx {
 			return 0;
 		}
 
+		// Shift left One Bit (Memory or Accumulator)
 		uint8_t doASL(uint8_t data)
 		{
 			P.setC(!!(data & 0x80));
@@ -1494,6 +1538,7 @@ namespace m65xx {
 			return data;
 		}
 
+		// Test Bits in Memory with Accumulator
 		uint8_t doBIT(uint8_t data)
 		{
 			P.setZ(!(A & data));
@@ -1502,24 +1547,28 @@ namespace m65xx {
 			return 0;
 		}
 
+		// Clear Carry Flag
 		uint8_t doCLC(uint8_t)
 		{
 			P.setC(false);
 			return 0;
 		}
 
+		// Clear Decimal Mode
 		uint8_t doCLD(uint8_t)
 		{
 			P.setD(false);
 			return 0;
 		}
 
+		// Clear Interrupt Disable Bit
 		uint8_t doCLI(uint8_t)
 		{
 			P.setI(false);
 			return 0;
 		}
 
+		// Clear Overflow Flag
 		uint8_t doCLV(uint8_t)
 		{
 			P.setV(0);
@@ -1534,42 +1583,49 @@ namespace m65xx {
 			return diff;	// Returned for AXS
 		}
 
+		// Compare Memory with Accumulator
 		uint8_t doCMP(uint8_t data)
 		{
 			doCompare(A, data);
 			return 0;
 		}
 
+		// Compare Memory and Index X
 		uint8_t doCPX(uint8_t data)
 		{
 			doCompare(X, data);
 			return 0;
 		}
 
+		// Compare Memory and Index Y
 		uint8_t doCPY(uint8_t data)
 		{
 			doCompare(Y, data);
 			return 0;
 		}
 
+		// Decrement Memory by One
 		uint8_t doDEC(uint8_t data)
 		{
 			P.setNZ(--data);
 			return data;
 		}
 
+		// Decrement Index X by One
 		uint8_t doDEX(uint8_t)
 		{
 			P.setNZ(--X);
 			return 0;
 		}
 
+		// Decrement Index Y by One
 		uint8_t doDEY(uint8_t)
 		{
 			P.setNZ(--Y);
 			return 0;
 		}
 
+		// "Exclusive-Or" Memory with Accumulator
 		uint8_t doEOR(uint8_t data)
 		{
 			A ^= data;
@@ -1577,6 +1633,7 @@ namespace m65xx {
 			return 0;
 		}
 
+		// Increment Memory by One
 		uint8_t doINC(uint8_t data)
 		{
 			data += 1;
@@ -1584,18 +1641,21 @@ namespace m65xx {
 			return data;
 		}
 
+		// Increment Index X by One
 		uint8_t doINX(uint8_t)
 		{
 			P.setNZ(++X);
 			return 0;
 		}
 
+		// Increment Index Y by One
 		uint8_t doINY(uint8_t)
 		{
 			P.setNZ(++Y);
 			return 0;
 		}
 
+		// Load Accumulator with Memory
 		uint8_t doLDA(uint8_t data)
 		{
 			A = data;
@@ -1603,6 +1663,7 @@ namespace m65xx {
 			return 0;
 		}
 
+		// Load Index X with Memory
 		uint8_t doLDX(uint8_t data)
 		{
 			X = data;
@@ -1610,6 +1671,7 @@ namespace m65xx {
 			return 0;
 		}
 
+		// Load Index Y with Memory
 		uint8_t doLDY(uint8_t data)
 		{
 			Y = data;
@@ -1617,6 +1679,7 @@ namespace m65xx {
 			return 0;
 		}
 
+		// Shift Right One Bit (Memory or Accumulator)
 		uint8_t doLSR(uint8_t data)
 		{
 			P.setC(bool(data & 1));
@@ -1626,11 +1689,13 @@ namespace m65xx {
 			return data;
 		}
 
+		// No Operation
 		uint8_t doNOP(uint8_t)
 		{
 			return 0;
 		}
 
+		// "OR" Memory with Accumulator
 		uint8_t doORA(uint8_t data)
 		{
 			A |= data;
@@ -1638,16 +1703,20 @@ namespace m65xx {
 			return 0;
 		}
 
+		// PHA - Push Accumulator on Stack
+		// STA - Store Accumulator in Memory
 		uint8_t doGetA(uint8_t)
 		{
 			return A;
 		}
 
+		// Push Processor Status on Stack
 		uint8_t doPHP(uint8_t)
 		{
 			return uint8_t(P);
 		}
 
+		// Pull Accumulator from Stack
 		uint8_t doPLA(uint8_t data)
 		{
 			A = data;
@@ -1655,12 +1724,14 @@ namespace m65xx {
 			return 0;
 		}
 
+		// Pull Processor Status from Stack
 		uint8_t doPLP(uint8_t data)
 		{
 			P = data;
 			return 0;
 		}
 
+		// Rotate One Bit Left (Memory or Accumulator)
 		uint8_t doROL(uint8_t data)
 		{
 			uint8_t shift_in = P.getC();
@@ -1670,6 +1741,7 @@ namespace m65xx {
 			return data;
 		}
 
+		// Rotate One Bit Right (Memory or Accumulator)
 		uint8_t doROR(uint8_t data)
 		{
 			uint8_t shift_in = P.getC() << 7;
@@ -1679,34 +1751,40 @@ namespace m65xx {
 			return data;
 		}
 
+		// Set Carry Flag
 		uint8_t doSEC(uint8_t)
 		{
 			P.setC(true);
 			return 0;
 		}
 
+		// Set Decimal Mode
 		uint8_t doSED(uint8_t)
 		{
 			P.setD(true);
 			return 0;
 		}
 
+		// Set Interrupt Disable Status
 		uint8_t doSEI(uint8_t)
 		{
 			P.setI(true);
 			return 0;
 		}
 
+		// STX - Store Index X in Memory
 		uint8_t doGetX(uint8_t)
 		{
 			return X;
 		}
 
+		// STY - Store Index Y in Memory
 		uint8_t doGetY(uint8_t)
 		{
 			return Y;
 		}
 
+		// Transfer Accumulator to Index X
 		uint8_t doTAX(uint8_t)
 		{
 			X = A;
@@ -1714,6 +1792,7 @@ namespace m65xx {
 			return 0;
 		}
 
+		// Transfer Accumulator to Index Y
 		uint8_t doTAY(uint8_t)
 		{
 			Y = A;
@@ -1721,6 +1800,7 @@ namespace m65xx {
 			return 0;
 		}
 
+		// Transfer Stack Pointer to Index X
 		uint8_t doTSX(uint8_t)
 		{
 			X = SP;
@@ -1728,6 +1808,7 @@ namespace m65xx {
 			return 0;
 		}
 
+		// Transfer Index X to Accumulator
 		uint8_t doTXA(uint8_t)
 		{
 			A = X;
@@ -1735,6 +1816,7 @@ namespace m65xx {
 			return 0;
 		}
 
+		// Transfer Index X to Stack Pointer
 		uint8_t doTXS(uint8_t)
 		{
 			SP = X;
@@ -1742,6 +1824,7 @@ namespace m65xx {
 			return 0;
 		}
 
+		// Transfer Index Y to Accumulator
 		uint8_t doTYA(uint8_t)
 		{
 			A = Y;
@@ -1752,7 +1835,7 @@ namespace m65xx {
 		// Illegal operations !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 		//
 		// NMOS 6510 Unintended Opcodes "No More Secrets" v0.95 - 24/12/20
-		// used as reference for these.
+		// used as reference for these. <https://csdb.dk/release/?id=198357>
 
 		// ALR: AND + LSR
 		//   A = (A & #{imm}) / 2
@@ -1804,7 +1887,7 @@ namespace m65xx {
 			return 0;
 		}
 
-		// AXS: CMP + DEX
+		// AXS: CMP + DEX					(aka SBX, SAX, XMA)
 		//   X = A & X - #{imm}
 		uint8_t doAXS(uint8_t data)
 		{
@@ -1831,7 +1914,7 @@ namespace m65xx {
 			return data;
 		}
 
-		// LAS: STA/TXS + LDA/TSX (maybe unstable?)
+		// LAS: STA/TXS + LDA/TSX (maybe unstable?)		(aka LAR)
 		//   A,X,SP = {addr} & SP
 		uint8_t doLAS(uint8_t data)
 		{
@@ -1916,28 +1999,28 @@ namespace m65xx {
 			return value;
 		}
 
-		// AHX: STA/STX/STY
+		// AHX: STA/STX/STY						(aka SHA, AXA, TEA)
 		//   {addr} = A & X & {H+1}
 		uint8_t doAHX(uint8_t prehi)
 		{
 			return doUnstableHi(A & X, prehi);
 		}
 
-		// SHX: STA/STX/STY
+		// SHX: STA/STX/STY						(aka A11, SXA, XAS, TEX)
 		//   {addr} = X & {H+1}
 		uint8_t doSHX(uint8_t prehi)
 		{
 			return doUnstableHi(X, prehi);
 		}
 
-		// SHY: STA/STX/STY
+		// SHY: STA/STX/STY						(aka A11, SYA, SAY, TEY)
 		//   {addr} = Y & {H+1}
 		uint8_t doSHY(uint8_t prehi)
 		{
 			return doUnstableHi(Y, prehi);
 		}
 
-		// TAS: STA/TXS , LDA/TSX
+		// TAS: STA/TXS , LDA/TSX				(aka XAS, SHS)
 		//   SP = A & X   {addr} = A & X & {H+1}
 		uint8_t doTAS(uint8_t prehi)
 		{
@@ -1948,12 +2031,12 @@ namespace m65xx {
 		// "Magic constant" unstable opcodes ---------------------------------------
 		// Operation depends on a "magic" value that is dependent on analog
 		// properties of the CPU and its operating environment. They cannot be
-		// modelled 100% accurately, but you can pick magic constants that wil
+		// modelled 100% accurately, but you can pick magic constants that will
 		// work for the majority of cases.
 
 		static constexpr inline uint8_t LAX_MAGIC = 0xEE;
 
-		// LAX #imm: LDA + LDX + TAX
+		// LAX #imm: LDA + LDX + TAX			(aka ATX, LXA, OAL, ANX)
 		//   A,X = (A | {CONST}) & #{imm}
 		// LAX #imm is in this group because it wires up the Accumulator as input
 		// and output to the Special Bus at the same time, while the other versions
@@ -1965,20 +2048,21 @@ namespace m65xx {
 			return 0;
 		}
 
-		static constexpr inline uint8_t XAA_MAGIC = 0xEF;
-		static constexpr inline uint8_t XAA_MAGIC_RDY = 0xEE;
+		static constexpr inline uint8_t XAA_MAGIC = 0xEF;		// for RDY high
+		static constexpr inline uint8_t XAA_MAGIC_RDY = 0xEE;	// for RDY low
 
-		// XAA
+		// XAA									(axa ANE, AXM)
 		//   A = (A | {CONST}) & X & #imm
 		uint8_t doXAA(uint8_t data)
 		{
-			A = (A | (!CheckRDY() ? XAA_MAGIC_RDY : XAA_MAGIC)) & X & data;
+			A = (A | (CheckRDY() ? XAA_MAGIC : XAA_MAGIC_RDY)) & X & data;
 			P.setNZ(A);
 			return 0;
 		}
 
 		/***************************** Opcode tables ******************************/
 
+		// ModeExec is a jump table to the first state of each addressing mode.
 		static inline const ExecPtr ModeExec[] = {
 			&type::execImplicit_T02,	// implicit
 			&type::execAccumulator_T02,	// accumulator
@@ -2025,6 +2109,7 @@ namespace m65xx {
 			&type::execHalt_T2,			// Halt the processor
 		};
 
+		// DoOp is a jump table to the functions that execute each operation.
 		static inline const DoOpPtr DoOp[] = {
 			&type::doADC,
 			&type::doAND,
@@ -2083,7 +2168,7 @@ namespace m65xx {
 			&type::doTXS,
 			&type::doTYA,
 
-			// Illegal operations
+			// "Illegal" operations
 			&type::doAHX,
 			&type::doALR,
 			&type::doANC,
@@ -2091,7 +2176,7 @@ namespace m65xx {
 			&type::doAXS,
 			&type::doDCP,
 			&type::doISC,
-			&type::doNOP,	// KIL
+			&type::doNOP,	// KIL/HLT/CIM/CRP
 			&type::doLAS,
 			&type::doLAX,
 			&type::doLAX_IMM,
