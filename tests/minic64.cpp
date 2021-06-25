@@ -6,6 +6,10 @@
 #include "yam6502.h"
 #include "test.h"
 
+// A minimal CIA emulation with timers and IRQ generation, which is enough to get the
+// timing tests working. This is based on cia6526.cpp from
+// <https://www.commodore.ca/manuals/funet/cbm/documents/chipdata/cia6526.zip>, which
+// as far as I know, is public domain.
 class MiniCIA {
 public:
 	// Control register bits
@@ -269,11 +273,11 @@ private:
 struct MiniC64Bus {
 	constexpr static inline int TRAP = 2;
 
-	constexpr static inline uint16_t FACHO = 0x62;
+	constexpr static inline uint16_t FACHO = 0x62;		// Floating-point accumulator #1: Mantissa (5 bytes)
 
-	constexpr static inline uint16_t FNLEN = 0xB7;
+	constexpr static inline uint16_t FNLEN = 0xB7;		// Length of Current File Name
 	constexpr static inline uint16_t SA = 0xB9;			// Secondary address for IO
-	constexpr static inline uint16_t FNADR = 0xBB;
+	constexpr static inline uint16_t FNADR = 0xBB;		// Pointer: Current File Name
 	constexpr static inline uint16_t PNTR = 0xD3;		// Cursor column on current line
 
 	constexpr static inline uint16_t CBINV = 0x0316;	// BRK interrupt vector
@@ -288,22 +292,23 @@ struct MiniC64Bus {
 	constexpr static inline uint16_t LINPRNT = 0xBDCD;	// Print XA as unsigned integer
 	constexpr static inline uint16_t FOUT = 0xBDDD;		// FP accum to string at bottom of stack
 
-	constexpr static inline uint16_t SCROLY = 0xD011;
+	constexpr static inline uint16_t SCROLY = 0xD011;	// VIC Control Register
 
 	constexpr static inline uint16_t CIA2CRA = 0xDD0E;	// CIA 2 control register A
 	constexpr static inline uint16_t CIA2CRB = 0xDD0F;	// CIA 2 control register B
 
-	constexpr static inline uint16_t TIMB = 0xFE66;		// BRK handler
-	constexpr static inline uint16_t PULS = 0xFF48;		// IRQ handler
+	constexpr static inline uint16_t TIMB = 0xFE66;		// Kernal BRK handler
+	constexpr static inline uint16_t PULS = 0xFF48;		// Kernal IRQ handler
 	constexpr static inline uint16_t SETNAM = 0xFDF9;	// Set filename parameters
 
-	constexpr static inline uint16_t VEC_IOINIT = 0xFF84;
+	// Kernal jump table routines
+	constexpr static inline uint16_t VEC_IOINIT = 0xFF84;	// Initialize I/O devices
 	constexpr static inline uint16_t VEC_RESTOR = 0xFF8A;	// Restore default system and interrupt vectors
 	constexpr static inline uint16_t VEC_SETLFS = 0xFFBA;	// Set up a logical file
-	constexpr static inline uint16_t VEC_SETNAM = 0xFFBD;
-	constexpr static inline uint16_t VEC_GETIN = 0xFFE4;
-	constexpr static inline uint16_t VEC_CHROUT = 0xFFD2;
-	constexpr static inline uint16_t VEC_LOAD = 0xFFD5;	// Load RAM from a device
+	constexpr static inline uint16_t VEC_SETNAM = 0xFFBD;	// Set up file name
+	constexpr static inline uint16_t VEC_GETIN = 0xFFE4;	// Get a character
+	constexpr static inline uint16_t VEC_CHROUT = 0xFFD2;	// Output a character
+	constexpr static inline uint16_t VEC_LOAD = 0xFFD5;		// Load RAM from a device
 
 	using cputype = m65xx::M6502<MiniC64Bus *, TRAP>;
 
@@ -361,16 +366,13 @@ void MiniC64Bus::Init(const cputype &cpu)
 	CIA1.Reset();
 	CIA2.Reset();
 
-	// Set traps for several ROM routines
+	// Set traps for several ROM routines that we will implement natively
 	for (auto traploc :
 		{ TIMB, READY, VEC_RESTOR, VEC_LOAD, VEC_CHROUT,
 			FLOATC, FMULT, MOVAF, FADDT, FOUT, STROUT, LINPRNT }) {
 		memory[traploc] = TRAP;
 		memory[traploc + 1] = 0x60;	// RTS
 	}
-
-	memory[VEC_SETNAM] = 0x4C;		// JMP
-	WriteWord(VEC_SETNAM + 1, SETNAM);
 
 	memory[VEC_IOINIT] = 0x60;		// RTS because not relevant here
 
@@ -380,12 +382,15 @@ void MiniC64Bus::Init(const cputype &cpu)
 	memory[VEC_SETLFS + 1] = SA;
 	memory[VEC_SETLFS + 2] = 0x60;	// RTS
 
-	// Make GETIN always return a space character
+	// Make GETIN always return a space character.
 	memory[VEC_GETIN] = 0xA9;		// LDA #
 	memory[VEC_GETIN + 1] = ' ';
 	memory[VEC_GETIN + 2] = 0x60;	// RTS
 
-	// Copy SETNAM routine
+	// Set up SETNAM routine.
+	memory[VEC_SETNAM] = 0x4C;		// JMP
+	WriteWord(VEC_SETNAM + 1, SETNAM);
+	
 	static const uint8_t setnam[] = {
 		0x85, FNLEN,		// STA FNLEN
 		0x86, FNADR,		// STX FNADR
@@ -400,17 +405,17 @@ void MiniC64Bus::Init(const cputype &cpu)
 
 	// Copy IRQ handler
 	static const uint8_t puls[] = {
+		0x48,				// PHA			; push accumulator
+		0x8A,				// TXA			; push X register
 		0x48,				// PHA
-		0x8A,				// TXA
+		0x98,				// TYA			; push Y register
 		0x48,				// PHA
-		0x98,				// TYA
-		0x48,				// PHA
-		0xBA,				// TSX
+		0xBA,				// TSX			; check status of B bit
 		0xBD, 0x04, 0x01,	// LDA $0104,X
 		0x29, 0x10,			// AND #$10
 		0xF0, 0x03,			// BEQ $FF58
-		0x6C, 0x16, 0x03,	// JMP ($0316)
-		0x6C, 0x14, 0x03,	// JMP ($0314)
+		0x6C, 0x16, 0x03,	// JMP ($0316)	; jump to break vector if set
+		0x6C, 0x14, 0x03,	// JMP ($0314)	; jump to IRQ vector if clear
 	};
 	std::copy(puls, puls + sizeof(puls), &memory[PULS]);
 }
@@ -419,17 +424,19 @@ void MiniC64Bus::StartTest(cputype &cpu, uint16_t loadaddr)
 {
 	Init(cpu);
 
-	// Set up top of stack so RTS goes to READY
+	// Set up top of stack so RTS goes to READY.
 	WriteWord(0x1FE, READY - 1);
 	cpu.setSP(0x1FD);
 	cpu.setP(0);
 
 	// Find the real program immediately after the BASIC stub.
+	// BASIC program are stored in a single-linked list of program lines,
+	// with a NULL pointer indicating the end of the program.
 	auto addr = ReadWord(loadaddr);
 	while (auto next = ReadWord(addr)) {
 		addr = next;
 	}
-	// Start is the first non-0 byte
+	// Start of routine is the first non-0 byte.
 	addr += 2;
 	while (memory[addr] == 0) {
 		++addr;
@@ -461,11 +468,13 @@ int MiniC64Bus::LoadTest(std::string_view testname, bool reloc, uint16_t loadadd
 		return -1;
 	}
 
+	// Read base address of file
 	uint8_t loadbase[2] = { 0x01, 0x08 };
 	if (!input.read(reinterpret_cast<char *>(loadbase), 2)) {
 		pfileerror(path, "Could not read file");
 		return -1;
 	}
+	// But only use the base address if we are not relocating the file.
 	if (!reloc) {
 		loadaddr = (static_cast<uint16_t>(loadbase[1]) << 8) | loadbase[0];
 	}
@@ -484,7 +493,7 @@ std::string MiniC64Bus::pet2ascii(uint8_t pet)
 		return "";
 	}
 	if (pet == 145) {	// Cursor up
-		return "\33[A";
+		return "\33[A";	// This is the ANSI escape sequence to move the cursor up
 	}
 	if (pet >= 'A' && pet <= 'Z') {
 		return std::string(1, pet + ('a' - 'A'));
@@ -501,6 +510,7 @@ std::string MiniC64Bus::pet2ascii(uint8_t pet)
 	return std::string(1, pet);
 }
 
+// Debug helper for tracing the test execution.
 void MiniC64Bus::SyncHandler([[maybe_unused]] cputype &cpu, [[maybe_unused]] uint16_t pc) const
 {
 #if 0
@@ -527,6 +537,10 @@ void MiniC64Bus::SyncHandler([[maybe_unused]] cputype &cpu, [[maybe_unused]] uin
 #endif
 }
 
+// This was used to catch unimplemented routines that were needed to get the different
+// tests running. At this point, all the tests run, so this routine isn't needed anymore,
+// but keeping it in ensures that there is one path where the relevant code in M6502
+// is actually compiled.
 bool MiniC64Bus::BreakHandler([[maybe_unused]] cputype &cpu, uint16_t addr)
 {
 	if (!DontTrapBreak && addr >= 0xA000) {
@@ -539,22 +553,25 @@ bool MiniC64Bus::BreakHandler([[maybe_unused]] cputype &cpu, uint16_t addr)
 	return false;
 }
 
+// Implement various ROM routines needed to get the tests to run.
 bool MiniC64Bus::Trap(cputype &cpu, uint16_t addr)
 {
 	switch (addr) {
-	case TIMB:
+	// Kernal routines used by the tests.
+
+	case TIMB:			// Should never be reached if everything is working properly.
 		state = State::Failed;
 		return true;
 
-	case READY:
+	case READY:			// Returning to BASIC means the tests are over.
 		state = State::Passed;
 		return true;
 
-	case VEC_RESTOR:
+	case VEC_RESTOR:	// Restore state for the next test.
 		Init(cpu);
 		return true;
 
-	case VEC_LOAD: {
+	case VEC_LOAD: {	// Load a test.
 		std::string_view test{ reinterpret_cast<char *>(&memory[ReadWord(FNADR)]), memory[FNLEN] };
 		if (LoadTest(test, !!memory[SA], (cpu.getX() << 8) | cpu.getY()) < 0) {
 			std::cerr << "Failed loading " << test << '\n';
@@ -563,25 +580,28 @@ bool MiniC64Bus::Trap(cputype &cpu, uint16_t addr)
 		return true;
 	}
 
-	case VEC_CHROUT:
+	case VEC_CHROUT:	// Write out a PETSCII character
 		std::cout << pet2ascii(cpu.getA());
 		return true;
 
-		// Various BASIC routines used to print 16- and 32-bit decimal numbers
-	case FLOATC:
+
+	// Various BASIC routines used to print 16- and 32-bit decimal numbers
+
+	case FLOATC:		// Convert unsigned word to floating point
 		// FACHO[0] and FACHO[1] contain an unsigned 16-bit integer
 		// in big-endian order. X contains the MBF (Microsoft Binary
 		// Format) exponent. C is set for a positive number, clear for
 		// a negative number. We store the result in a private
 		// accumulator in the host's native floating point format
-		// rather than the zero page MBF accumulator.
+		// rather than the zero page MBF accumulator, since none of
+		// the tests actually read it.
 		fp_accum = ((memory[FACHO] << 8) | memory[FACHO + 1]) * std::exp2(cpu.getX() - (128 + 16));
 		if (!(cpu.getP() & m65xx::FLAG_C)) {
 			fp_accum = -fp_accum;
 		}
 		return true;
 
-	case FMULT: {
+	case FMULT: {		// Floating point multiply
 		static_assert(sizeof(double) == 8 && std::numeric_limits<double>::is_iec559);
 		// A is the low byte of the memory arg's address
 		// Y is the high byte of the memory arg's address
@@ -589,7 +609,7 @@ bool MiniC64Bus::Trap(cputype &cpu, uint16_t addr)
 		// On the C64, this is a 5-byte MBF floating point number,
 		// which is very similar to IEEE-754. The first byte is the
 		// exponent, 128 biased. The next bit is the sign. Then the next
-		// 32 bits are are the mantissa, in big-endian format. There is an
+		// 31 bits are are the mantissa, in big-endian format. There is an
 		// implicit 1 just after the radix point (compared to just before
 		// it for IEEE-754).
 		const uint8_t *mbf = &memory[(cpu.getY() << 8) | cpu.getA()];
@@ -610,59 +630,54 @@ bool MiniC64Bus::Trap(cputype &cpu, uint16_t addr)
 		return true;
 	}
 
-	case MOVAF:
+	case MOVAF:		// Move floating point accumulator to floating point argument.
 		fp_arg = fp_accum;
 		return true;
 
-	case FADDT:
+	case FADDT:		// Add floating point argument to floating point accumulator.
 		fp_accum += fp_arg;
 		return true;
 
-	case FOUT:
+	case FOUT:		// Convert floating point to string at bottom of stack space.
 		snprintf(reinterpret_cast<char *>(&memory[0x100]), 32, "% .f", fp_accum);
 		cpu.setY(1);
 		cpu.setA(0);
 		return true;
 
-	case LINPRNT:
+	case LINPRNT:	// Print AX as an unsigned integer
 		snprintf(reinterpret_cast<char *>(&memory[0x100]), 32, "%u",
 			static_cast<unsigned>((cpu.getA() << 8) | cpu.getX()));
 		cpu.setY(1);
 		cpu.setA(0);
 		[[fallthrough]];
 
-	case STROUT:
+	case STROUT:	// Print the 0-terminated string at YA
 		std::cout << reinterpret_cast<char *>(&memory[(cpu.getY() << 8) | cpu.getA()]);
 		return true;
 	}
 	return false;
 }
 
+// Read a 16-bit value from RAM
 [[nodiscard]] uint16_t MiniC64Bus::ReadWord(uint16_t addr) const
 {
 	return memory[addr] + (memory[addr + 1] << 8);
 }
 
+// Write a 16-bit value to RAM
 void MiniC64Bus::WriteWord(uint16_t addr, uint16_t data)
 {
 	memory[addr] = data & 0xFF;
 	memory[addr + 1] = data >> 8;
 }
 
+// Read from RAM or I/O
 uint8_t MiniC64Bus::ReadAddr(uint16_t addr)
 {
-#if 0
-	auto irqb = GetIRQB();
-	auto nmib = GetNMIB();
-	auto icr1 = CIA1.GetICR();
-	auto icr2 = CIA2.GetICR();
-	printf("Read %04x, IRQB=%d NMIB=%d ICR1=%02x ICR2=%02x", addr, irqb, nmib, icr1, icr2);
-	if (!nmib)
-		printf("*************************************************");
-	printf("\n");
-#endif
 	if (addr == SCROLY) {
-		// Always say we're inside the border, since we're not emulating any VIC-II DMA
+		// Always say we're inside the border, since we're not emulating any VIC-II DMA.
+		// The other bits don't matter, since the tests just read this to ensure that
+		// the VIC-II won't pull the RDY line low during the test.
 		return 0x80;
 	}
 	if ((addr & 0xFF00) == 0xDC00) {
@@ -674,6 +689,7 @@ uint8_t MiniC64Bus::ReadAddr(uint16_t addr)
 	return memory[addr];
 }
 
+// Write to RAM or I/O.
 void MiniC64Bus::WriteAddr(uint16_t addr, uint8_t data)
 {
 	if (addr == PNTR) {
@@ -693,7 +709,7 @@ void MiniC64Bus::WriteAddr(uint16_t addr, uint8_t data)
 	}
 }
 
-
+// Start the Lorenz test suite rolling.
 void run_lorenz_tests()
 {
 	printf("Running Wolfgang Lorenz's test suite\n");
