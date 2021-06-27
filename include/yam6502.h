@@ -236,10 +236,10 @@ namespace m65xx {
 		//    final BRK cycle will be "lost".
 		//
 		// As these are unlikely to be useful behaviors except for 100% accurate
-		// emulation, this defaults to off.
+		// emulation, this can be turned off.
 		//
 		// This class will not change this flag.
-		bool EmulateNMIBRKBug = false;
+		bool EmulateNMIBRKBug = true;
 
 		// Getters
 		[[nodiscard]] uint8_t getA() const { return A; }

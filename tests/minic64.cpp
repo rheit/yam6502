@@ -715,7 +715,6 @@ void run_lorenz_tests()
 	printf("Running Wolfgang Lorenz's test suite\n");
 	MiniC64Bus bus;
 	MiniC64Bus::cputype cpu(&bus);
-	cpu.EmulateNMIBRKBug = true;
 	if (auto loadaddr = bus.LoadTest("START", false, 0)) {
 		bus.StartTest(cpu, loadaddr);
 		auto start = std::chrono::steady_clock::now();

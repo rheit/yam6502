@@ -148,6 +148,9 @@ void run_interrupt_test()
 	}
 	m65xx::M6502<decltype(&bus)> cpu(&bus);
 	cpu.setPC(code_segment);
+	// As indicated by the comment on lines 932-333 of 6502_interrupt_test.a65,
+	// this tests needs the BRK bug emulation disabled to function properly.
+	cpu.EmulateNMIBRKBug = false;
 	unsigned long long clocks = 0;
 	auto start = std::chrono::steady_clock::now();
 	while (bus.last_addr != static_cast<uint16_t>(IO::Done)) {
