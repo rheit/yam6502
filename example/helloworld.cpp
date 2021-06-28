@@ -24,7 +24,7 @@ struct CharOutBus : RAMBus {
 };
 
 template<typename T>
-using m6502 = m65xx::M6502<T>;
+using m6502 = yam::M6502<T>;
 
 int main()
 {
@@ -49,12 +49,12 @@ int main()
 	std::copy(std::begin(message), std::end(message), &mem[0x40]);
 
 	// Set the reset vector to begin executing our code at $600
-	const auto resetvec = cpu.opToVector(m65xx::op::RESET);
+	const auto resetvec = cpu.opToVector(yam::op::RESET);
 	mem[resetvec] = 0x00;
 	mem[resetvec + 1] = 0x06;
 
 	// Set the break vector to point to $FF00
-	const auto breakvec = cpu.opToVector(m65xx::op::BRK);
+	const auto breakvec = cpu.opToVector(yam::op::BRK);
 	mem[breakvec] = 0x00;
 	mem[breakvec + 1] = 0xFF;
 

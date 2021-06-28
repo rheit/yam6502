@@ -4,7 +4,7 @@
 #include <string>
 #include <functional>
 
-namespace m65xx {
+namespace yam {
 	// Addressing modes
 	enum class am : uint8_t {
 		imp,				// implicit

@@ -65,7 +65,7 @@ struct TestBus {
 		::dump_mem(stdout, memory, start, end);
 	}
 #if 0
-	void SyncHandler(m65xx::M6502<TestBus *> &cpu, uint16_t pc)
+	void SyncHandler(yam::M6502<TestBus *> &cpu, uint16_t pc)
 	{
 		printf("A=%02X X=%02X Y=%02X S=%02X ",
 			cpu.getA(), cpu.getX(), cpu.getY(), cpu.getSP());
@@ -119,7 +119,7 @@ void run_functional_test()
 	if (!load_test("6502_functional_test.bin", bus.memory, 0)) {
 		return;
 	}
-	m65xx::M6502<TestBus *> cpu(&bus);
+	yam::M6502<TestBus *> cpu(&bus);
 	cpu.setPC(0x400);
 	unsigned long long clocks = 0;
 	auto start = std::chrono::steady_clock::now();
@@ -146,7 +146,7 @@ void run_interrupt_test()
 	if (!load_test("6502_interrupt_test.bin", bus.memory, code_segment)) {
 		return;
 	}
-	m65xx::M6502<decltype(&bus)> cpu(&bus);
+	yam::M6502<decltype(&bus)> cpu(&bus);
 	cpu.setPC(code_segment);
 	// As indicated by the comment on lines 932-333 of 6502_interrupt_test.a65,
 	// this tests needs the BRK bug emulation disabled to function properly.
@@ -187,7 +187,7 @@ void run_decimal_test()
 	if (!load_test("6502_decimal_test.bin", bus.memory, decimal_org)) {
 		return;
 	}
-	m65xx::M6502<TestBus *> cpu(&bus);
+	yam::M6502<TestBus *> cpu(&bus);
 	cpu.setPC(decimal_org);
 	unsigned long long clocks = 0;
 	auto start = std::chrono::steady_clock::now();

@@ -3,7 +3,7 @@
 
 // Common data for the 6502 emulation that is always the same no matter how
 // the templated class is instantiated.
-namespace m65xx {
+namespace yam {
 	const char OpNames[][4] = {
 		"ADC",
 		"AND",

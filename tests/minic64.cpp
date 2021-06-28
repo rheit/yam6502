@@ -310,7 +310,7 @@ struct MiniC64Bus {
 	constexpr static inline uint16_t VEC_CHROUT = 0xFFD2;	// Output a character
 	constexpr static inline uint16_t VEC_LOAD = 0xFFD5;		// Load RAM from a device
 
-	using cputype = m65xx::M6502<MiniC64Bus *, TRAP>;
+	using cputype = yam::M6502<MiniC64Bus *, TRAP>;
 
 	uint8_t memory[65536]{};
 	MiniCIA CIA1;
@@ -400,7 +400,7 @@ void MiniC64Bus::Init(const cputype &cpu)
 	std::copy(setnam, setnam + sizeof(setnam), &memory[SETNAM]);
 
 	// Setup vectors
-	WriteWord(cpu.opToVector(m65xx::op::IRQ), PULS);
+	WriteWord(cpu.opToVector(yam::op::IRQ), PULS);
 	WriteWord(CBINV, TIMB);
 
 	// Copy IRQ handler
@@ -596,7 +596,7 @@ bool MiniC64Bus::Trap(cputype &cpu, uint16_t addr)
 		// rather than the zero page MBF accumulator, since none of
 		// the tests actually read it.
 		fp_accum = ((memory[FACHO] << 8) | memory[FACHO + 1]) * std::exp2(cpu.getX() - (128 + 16));
-		if (!(cpu.getP() & m65xx::FLAG_C)) {
+		if (!(cpu.getP() & yam::FLAG_C)) {
 			fp_accum = -fp_accum;
 		}
 		return true;
