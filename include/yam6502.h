@@ -160,16 +160,16 @@ namespace yam {
 	extern const DisasmInfo ModeTable[static_cast<int>(am::COUNT)];
 	extern const BaseOpcode Opc6502[256];
 
-	enum : uint8_t {
-		FLAG_C = 0x01,
-		FLAG_Z = 0x02,
-		FLAG_I = 0x04,
-		FLAG_D = 0x08,
-		FLAG_B = 0x10,
-		FLAG_RESERVED = 0x20,
-		FLAG_V = 0x40,
-		FLAG_N = 0x80
-	};
+	namespace flag {
+		static constexpr inline uint8_t C = 0x01;
+		static constexpr inline uint8_t Z = 0x02;
+		static constexpr inline uint8_t I = 0x04;
+		static constexpr inline uint8_t D = 0x08;
+		static constexpr inline uint8_t B = 0x10;
+		static constexpr inline uint8_t RESERVED = 0x20;
+		static constexpr inline uint8_t V = 0x40;
+		static constexpr inline uint8_t N = 0x80;
+	}
 
 	// Concepts to check for optional features of the bus
 	//
@@ -361,18 +361,18 @@ namespace yam {
 			// Set individual flags.
 			constexpr void setN(uint8_t val) { N = val; }
 			constexpr void setV(uint8_t val) { V = val; }
-			constexpr void setD(bool flag) { if (flag) { DI |= FLAG_D; } else { DI &= ~FLAG_D; } }
-			constexpr void setI(bool flag) { if (flag) { DI |= FLAG_I; } else { DI &= ~FLAG_I; } }
+			constexpr void setD(bool flag) { if (flag) { DI |= flag::D; } else { DI &= ~flag::D; } }
+			constexpr void setI(bool flag) { if (flag) { DI |= flag::I; } else { DI &= ~flag::I; } }
 			constexpr void setZ(bool flag) { Z = flag; }
 			constexpr void setC(bool flag) { C = flag; }
 
 			// Set the (N)egative and (Z)ero flag according to the value passed in.
 			constexpr void setNZ(uint8_t from) { setN(from); setZ(!from); }
 
-			[[nodiscard]] constexpr uint8_t getN() const { return N & FLAG_N; }
-			[[nodiscard]] constexpr uint8_t getV() const { return V & FLAG_V; }
-			[[nodiscard]] constexpr uint8_t getD() const { return DI & FLAG_D; }
-			[[nodiscard]] constexpr uint8_t getI() const { return DI & FLAG_I; }
+			[[nodiscard]] constexpr uint8_t getN() const { return N & flag::N; }
+			[[nodiscard]] constexpr uint8_t getV() const { return V & flag::V; }
+			[[nodiscard]] constexpr uint8_t getD() const { return DI & flag::D; }
+			[[nodiscard]] constexpr uint8_t getI() const { return DI & flag::I; }
 			[[nodiscard]] constexpr bool getZ() const { return Z; }
 			[[nodiscard]] constexpr bool getC() const { return C; }
 
@@ -381,16 +381,16 @@ namespace yam {
 			// set because the 6502 always sets it when exposing the processor flags
 			// to code except when pushing it to the stack during the IRQ and NMI sequences.
 			[[nodiscard]] constexpr explicit operator uint8_t() const {
-				return getN() | getV() | FLAG_RESERVED | FLAG_B | DI | (Z << 1) | (uint8_t)C;
+				return getN() | getV() | flag::RESERVED | flag::B | DI | (Z << 1) | (uint8_t)C;
 			}
 
 			// Split the combined flag word into separate pieces.
 			constexpr StatusFlags &operator=(uint8_t word) {
 				N = word;
 				V = word;
-				DI = word & (FLAG_D | FLAG_I);
-				Z = (word & FLAG_Z) >> 1;
-				C = word & FLAG_C;
+				DI = word & (flag::D | flag::I);
+				Z = (word & flag::Z) >> 1;
+				C = word & flag::C;
 				return *this;
 			}
 

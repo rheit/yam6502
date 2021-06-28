@@ -24,12 +24,12 @@ void print_p(unsigned p)
 {
 	printf("P=%02X [%c%c%c%c%c%c]",
 		p & 0xFF,
-		p & yam::FLAG_N ? 'N' : '.',
-		p & yam::FLAG_V ? 'V' : '.',
-		p & yam::FLAG_D ? 'D' : '.',
-		p & yam::FLAG_I ? 'I' : '.',
-		p & yam::FLAG_Z ? 'Z' : '.',
-		p & yam::FLAG_C ? 'C' : '.'
+		p & yam::flag::N ? 'N' : '.',
+		p & yam::flag::V ? 'V' : '.',
+		p & yam::flag::D ? 'D' : '.',
+		p & yam::flag::I ? 'I' : '.',
+		p & yam::flag::Z ? 'Z' : '.',
+		p & yam::flag::C ? 'C' : '.'
 	);
 }
 

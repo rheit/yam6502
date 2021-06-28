@@ -596,7 +596,7 @@ bool MiniC64Bus::Trap(cputype &cpu, uint16_t addr)
 		// rather than the zero page MBF accumulator, since none of
 		// the tests actually read it.
 		fp_accum = ((memory[FACHO] << 8) | memory[FACHO + 1]) * std::exp2(cpu.getX() - (128 + 16));
-		if (!(cpu.getP() & yam::FLAG_C)) {
+		if (!(cpu.getP() & yam::flag::C)) {
 			fp_accum = -fp_accum;
 		}
 		return true;
