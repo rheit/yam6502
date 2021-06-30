@@ -4,7 +4,7 @@
 #include <memory>
 #include <array>
 
-
+// This is a simple bus that contains 64k of RAM with no I/O.
 struct RAMBus {
 	[[maybe_unused]] uint8_t ReadAddr(uint16_t addr) const { return Memory[addr]; }
 	void WriteAddr(uint16_t addr, uint8_t val) { Memory[addr] = val; }
@@ -13,6 +13,8 @@ struct RAMBus {
 	std::array<uint8_t, 65536> Memory = { 0 };
 };
 
+// This is a slightly specialized version of RAMBus that, when address $000F
+// is written to, it also sends that character to stdout.
 struct CharOutBus : RAMBus {
 	void WriteAddr(uint16_t addr, uint8_t val)
 	{
@@ -23,13 +25,10 @@ struct CharOutBus : RAMBus {
 	}
 };
 
-template<typename T>
-using m6502 = yam::M6502<T>;
-
 int main()
 {
 	CharOutBus mem;
-	m6502<CharOutBus *> cpu(&mem);
+	yam::M6502<CharOutBus *> cpu(&mem);
 
 	// Small routine to print a zero terminated string beginning
 	// at address $40 by writing the characters to an output
@@ -45,10 +44,13 @@ int main()
 	};
 	static const char message[] = "Hello, world!\nThese two lines of text were output by the following 6502 code:\n\n";
 
+	// Copy the program to address $0600
 	std::copy(std::begin(code), std::end(code), &mem[0x600]);
+
+	// Copy the message to address $0040
 	std::copy(std::begin(message), std::end(message), &mem[0x40]);
 
-	// Set the reset vector to begin executing our code at $600
+	// Set the reset vector to begin executing our code at $0600
 	const auto resetvec = cpu.opToVector(yam::op::RESET);
 	mem[resetvec] = 0x00;
 	mem[resetvec + 1] = 0x06;
@@ -64,6 +66,7 @@ int main()
 		cpu.Tick();
 	}
 
+	// Now disassemble the program
 	for (uint16_t codeptr = 0x600; codeptr < 0x600 + sizeof(code); ) {
 		puts(cpu.DisasmStep(codeptr, true).c_str());
 	}
