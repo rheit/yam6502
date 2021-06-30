@@ -3,7 +3,7 @@
 #include <cmath>
 #include <cstring>
 
-#include "yam6502.h"
+#include "yam6502.hpp"
 #include "test.h"
 
 // A minimal CIA emulation with timers and IRQ generation, which is enough to get the

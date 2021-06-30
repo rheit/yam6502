@@ -2,7 +2,7 @@
 #include <iostream>
 #include <chrono>
 
-#include "yam6502.h"
+#include "yam6502.hpp"
 #include "test.h"
 
 #ifdef _WIN32

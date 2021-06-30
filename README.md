@@ -35,11 +35,11 @@ in elementary school, but for now it's just a stand-alone CPU emulator.
 
 Usage
 -----
-YAM6502 consists of a single source file and a single header file (yam6502.h
-and yam6502.cpp) that are intended to be added to any project that uses it.
-Although the CMakeLists.txt here generates a static library out of it, that
-is not necessary and is done only to assist with sharing it across the
-multiple binaries included here.
+YAM6502 consists of a single source file and a single header file
+(yam6502.cpp and yam6502.h) that are intended to be added to any project
+that uses it. Although the CMakeLists.txt here generates a static library
+out of it, that is not necessary and is done only to assist with sharing it
+across the multiple binaries included here.
 
 ### Basic example
 

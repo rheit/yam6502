@@ -1,4 +1,4 @@
-#include "yam6502.h"
+#include "yam6502.hpp"
 #include <array>
 
 // Common data for the 6502 emulation that is always the same no matter how

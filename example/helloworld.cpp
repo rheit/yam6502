@@ -1,5 +1,5 @@
 #include "stdint.h"
-#include "yam6502.h"
+#include "yam6502.hpp"
 #include <stdio.h>
 #include <memory>
 #include <array>

@@ -3,7 +3,7 @@
 #include <cstring>
 #include <iostream>
 
-#include "yam6502.h"
+#include "yam6502.hpp"
 #include "test.h"
 
 void dump_mem(FILE *out, const uint8_t *memory, uint16_t start, uint16_t end)
