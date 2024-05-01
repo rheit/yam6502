@@ -700,8 +700,8 @@ namespace yam {
 		}
 		ExecPtrRet execAbsXY_T3()		// Fetch high byte of base address
 		{
-			TempAddr |= Bus->ReadAddr(PC++) << 8;
-			uint8_t pre_hi = TempAddr >> 8;
+			uint8_t pre_hi = Bus->ReadAddr(PC++);
+			TempAddr |= pre_hi << 8;
 			TempAddr += TempData;		// T2 stored X or Y in TempData for us
 			TempData = pre_hi;
 			return (TempAddr >> 8) != pre_hi ? &type::execAbsXY_T4 : &type::execCommon_T0;
